@@ -1,0 +1,15 @@
+{
+  "domain": "hapcbridge",
+  "name": "HA PC Bridge",
+  "codeowners": ["@muzdai"],
+  "config_flow": true,
+  "dependencies": ["mqtt", "http"],
+  "after_dependencies": ["frontend"],
+  "documentation": "https://github.com/muzdai/hapcbridge",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/muzdai/hapcbridge/issues",
+  "mqtt": ["hapcbridge/+/info"],
+  "requirements": [],
+  "version": "0.2.0"
+}

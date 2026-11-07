@@ -18,6 +18,8 @@
   "temperatureUnit": "C",      // "C" или "F"
   "primaryGpu": "",            // часть имени GPU, напр. "4080"; пусто = NVIDIA, иначе карта с наибольшей VRAM
   "trayIcon": true,
+  "haDiscovery": true,          // MQTT Discovery службы; интеграция из HACS выключает его сама
+  "allowRemoteConfig": true,    // разрешить менять настройки с карточки HA (кроме брокера)
 
   "sensors": {
     "cpuLoad": true,

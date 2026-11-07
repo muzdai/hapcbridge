@@ -1,0 +1,136 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "confirm": {
+        "title": "Add {name}?",
+        "description": "HA PC Bridge found the PC **{name}** (`{device_id}`) on the MQTT broker."
+      },
+      "user": {
+        "title": "Add a PC",
+        "description": "Normally PCs are discovered automatically. Enter the device id from the service's config.json.",
+        "data": {
+          "device_id": "Device id",
+          "base_topic": "Base topic"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This PC is already added",
+      "invalid_discovery_info": "Unexpected MQTT topic"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "cpu_load": {
+        "name": "CPU load"
+      },
+      "cpu_temp": {
+        "name": "CPU temperature"
+      },
+      "cpu_power": {
+        "name": "CPU power"
+      },
+      "gpu_load": {
+        "name": "GPU load"
+      },
+      "gpu_temp": {
+        "name": "GPU temperature"
+      },
+      "gpu_power": {
+        "name": "GPU power"
+      },
+      "gpu_memory_used": {
+        "name": "GPU memory used"
+      },
+      "ram_free": {
+        "name": "RAM free"
+      },
+      "ram_usage": {
+        "name": "RAM usage"
+      },
+      "total_power": {
+        "name": "Power consumption"
+      },
+      "logged_user": {
+        "name": "Logged user"
+      },
+      "last_login": {
+        "name": "Last login"
+      },
+      "last_boot": {
+        "name": "Last boot"
+      },
+      "active_window": {
+        "name": "Active window"
+      },
+      "active_process": {
+        "name": "Active process"
+      },
+      "idle_time": {
+        "name": "Idle time"
+      },
+      "mac": {
+        "name": "MAC address"
+      },
+      "ip": {
+        "name": "IP address"
+      }
+    },
+    "binary_sensor": {
+      "locked": {
+        "name": "Locked"
+      }
+    },
+    "switch": {
+      "power": {
+        "name": "Power"
+      }
+    },
+    "button": {
+      "shutdown": {
+        "name": "Shutdown"
+      },
+      "restart": {
+        "name": "Restart"
+      },
+      "abort_shutdown": {
+        "name": "Abort shutdown"
+      },
+      "sleep": {
+        "name": "Sleep"
+      },
+      "hibernate": {
+        "name": "Hibernate"
+      },
+      "lock": {
+        "name": "Lock"
+      },
+      "logoff": {
+        "name": "Log off"
+      },
+      "monitor_off": {
+        "name": "Monitor off"
+      },
+      "close_active_window": {
+        "name": "Close active window"
+      }
+    }
+  },
+  "services": {
+    "set_config": {
+      "name": "Change PC settings",
+      "description": "Sends a partial settings object to the PC (same keys as config.json, broker settings excluded).",
+      "fields": {
+        "config_entry_id": {
+          "name": "PC",
+          "description": "Config entry of the PC"
+        },
+        "config": {
+          "name": "Settings",
+          "description": "For example {\"temperatureUnit\": \"F\", \"sensors\": {\"idleTime\": false}}"
+        }
+      }
+    }
+  }
+}

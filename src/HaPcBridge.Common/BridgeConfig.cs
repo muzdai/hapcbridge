@@ -31,6 +31,15 @@ public sealed class BridgeConfig
     /// </summary>
     public string PrimaryGpu { get; set; } = "";
 
+    /// <summary>
+    /// Publish Home Assistant MQTT discovery. The HACS integration switches this off
+    /// when it adopts the PC, so entities aren't created twice.
+    /// </summary>
+    public bool HaDiscovery { get; set; } = true;
+
+    /// <summary>Accept settings changes from Home Assistant (topic …/config/set). Broker settings are never changed remotely.</summary>
+    public bool AllowRemoteConfig { get; set; } = true;
+
     /// <summary>Show the tray icon in the user session.</summary>
     public bool TrayIcon { get; set; } = true;
 

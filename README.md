@@ -1,6 +1,23 @@
 # HA PC Bridge
 
-Служба Windows, которая публикует состояние компьютера в Home Assistant через MQTT (Mosquitto) с автообнаружением и принимает команды: выключение, перезагрузка, сон, блокировка, закрытие активного окна. Включение — через Wake-on-LAN из Home Assistant.
+Служба Windows, которая публикует состояние компьютера в Home Assistant через MQTT (Mosquitto) и принимает команды: выключение, перезагрузка, сон, блокировка, закрытие активного окна. Включение — Wake-on-LAN из Home Assistant. В комплекте интеграция для HACS с карточкой, из которой настраивается сам ПК.
+
+## Home Assistant: интеграция и карточка (HACS)
+
+1. HACS → ⋮ → **Custom repositories** → `https://github.com/muzdai/hapcbridge`, тип **Integration** → установить **HA PC Bridge** → перезапустить HA.
+2. Нужна уже настроенная интеграция **MQTT** в HA. Компьютеры с запущенной службой находятся сами: *Настройки → Устройства и службы → Обнаружено → HA PC Bridge*. Вручную: *Добавить интеграцию → HA PC Bridge* и ввести `deviceId`.
+3. Карточка регистрируется интеграцией автоматически: *Изменить панель → Добавить карточку → HA PC Bridge*, выбрать компьютер. YAML:
+   ```yaml
+   type: custom:hapcbridge-card
+   device_id: gaming_pc
+   ```
+
+Что даёт интеграция по сравнению с «голым» MQTT Discovery:
+- **Wake-on-LAN встроен**: переключатель *Питание* сам шлёт magic packet, автоматизация и `wake_on_lan:` не нужны.
+- **Настройки ПК с карточки** (⚙): частота обновления, °C/°F, трей, задержка выключения, MAC/broadcast для WoL, основная GPU, «прочее железо» для расчёта потребления, включение/выключение каждого датчика и команды. Пока ПК выключен, настройки показываются неактивными.
+- Служба получает настройки через `hapcbridge/<id>/config/set`, сохраняет в `config.json` и применяет сразу. Брокер, логин/пароль и `deviceId` удалённо не меняются никогда; запретить удалённые изменения совсем — `"allowRemoteConfig": false` в `config.json`.
+- После добавления ПК интеграция выключает у службы собственное MQTT Discovery (`haDiscovery: false`), чтобы сущности не дублировались.
+- Действие `hapcbridge.set_config` для автоматизаций, например `{"updateIntervalSeconds": 2}` во время игры.
 
 ## Как устроено
 
@@ -75,9 +92,9 @@
 
 Пароль MQTT после первого запуска шифруется (DPAPI, ключ машины), папка конфигурации доступна только SYSTEM и администраторам.
 
-## Wake-on-LAN
+## Wake-on-LAN без интеграции
 
-Выключенный ПК не может принять команду «включись», поэтому:
+С интеграцией из HACS этот раздел не нужен. Если работаешь только через MQTT Discovery: выключенный ПК не может принять команду «включись», поэтому:
 
 1. В `configuration.yaml` HA должна быть строка `wake_on_lan:`.
 2. Добавь автоматизацию из [`ha/wake_on_lan.yaml`](ha/wake_on_lan.yaml) — она ловит ON на переключателе **Power** любого ПК и шлёт magic packet на MAC, который служба опубликовала (retained), пока ПК был включён.
@@ -94,6 +111,8 @@
 | `hapcbridge/<id>/info` | → HA | JSON: mac, ip, broadcast, hostname, os, version (retained) |
 | `hapcbridge/<id>/command` | ← HA | `shutdown`, `restart`, `abort_shutdown`, `sleep`, `hibernate`, `lock`, `logoff`, `monitor_off`, `close_active_window` |
 | `hapcbridge/<id>/power/set` | ← HA | `OFF` → выключение (`ON` обрабатывает HA через WoL) |
+| `hapcbridge/<id>/config` | → HA | текущие настройки без раздела `mqtt` (retained) |
+| `hapcbridge/<id>/config/set` | ← HA | частичный JSON с настройками |
 
 ## Сборка
 
@@ -103,6 +122,8 @@ dotnet publish src/HaPcBridge.Agent   -c Release -r win-x64 --self-contained -p:
 ```
 
 Сборка делается локально, GitHub используется только для кода.
+
+Тесты интеграции: `pip install pytest-homeassistant-custom-component && pytest`.
 
 ## Дальше по плану
 

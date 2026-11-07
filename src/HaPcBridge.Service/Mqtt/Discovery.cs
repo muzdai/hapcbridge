@@ -170,4 +170,6 @@ internal sealed class Topics
     public string Info => $"{Root}/info";
     public string Command => $"{Root}/command";
     public string PowerSet => $"{Root}/power/set";
+    public string ConfigSet => $"{Root}/config/set";
+    public string ConfigState => $"{Root}/config";
 }

@@ -6,3 +6,6 @@ publish/
 .vs/
 .idea/
 *.zip
+__pycache__/
+*.pyc
+.pytest_cache/

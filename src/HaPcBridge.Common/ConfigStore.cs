@@ -81,7 +81,7 @@ public static class ConfigStore
         catch { return ""; }
     }
 
-    static void Normalize(BridgeConfig cfg)
+    public static void Normalize(BridgeConfig cfg)
     {
         if (string.IsNullOrWhiteSpace(cfg.DeviceName)) cfg.DeviceName = Environment.MachineName;
         if (string.IsNullOrWhiteSpace(cfg.DeviceId)) cfg.DeviceId = Environment.MachineName;
@@ -116,4 +116,44 @@ public static class ConfigStore
 
     static string Unprotect(string b64) =>
         Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(b64), Entropy, DataProtectionScope.LocalMachine));
+}
+
+public static class RemoteConfig
+{
+    /// <summary>Top-level keys Home Assistant may change. Broker settings and identity stay local.</summary>
+    static readonly HashSet<string> Allowed = new(StringComparer.Ordinal)
+    {
+        "deviceName", "updateIntervalSeconds", "temperatureUnit", "primaryGpu", "trayIcon", "haDiscovery",
+        "sensors", "commands", "power", "wol",
+    };
+
+    /// <summary>Merges a partial JSON patch into a copy of <paramref name="cfg"/>. Unknown or forbidden keys are reported, not applied.</summary>
+    public static BridgeConfig Apply(BridgeConfig cfg, System.Text.Json.Nodes.JsonObject patch, List<string> rejected)
+    {
+        var current = System.Text.Json.JsonSerializer.SerializeToNode(cfg, ConfigStore.JsonOptions)!.AsObject();
+        foreach (var (key, value) in patch)
+        {
+            if (!Allowed.Contains(key) || !current.ContainsKey(key)) { rejected.Add(key); continue; }
+            if (value is System.Text.Json.Nodes.JsonObject sub && current[key] is System.Text.Json.Nodes.JsonObject target)
+            {
+                foreach (var (k, v) in sub)
+                {
+                    if (!target.ContainsKey(k)) { rejected.Add($"{key}.{k}"); continue; }
+                    target[k] = v?.DeepClone();
+                }
+            }
+            else current[key] = value?.DeepClone();
+        }
+        var next = current.Deserialize<BridgeConfig>(ConfigStore.JsonOptions) ?? cfg;
+        ConfigStore.Normalize(next);
+        return next;
+    }
+
+    /// <summary>The config as Home Assistant may see it: everything except the broker section.</summary>
+    public static System.Text.Json.Nodes.JsonObject Public(BridgeConfig cfg)
+    {
+        var o = System.Text.Json.JsonSerializer.SerializeToNode(cfg, ConfigStore.JsonOptions)!.AsObject();
+        o.Remove("mqtt");
+        return o;
+    }
 }

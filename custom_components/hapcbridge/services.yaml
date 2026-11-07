@@ -1,0 +1,12 @@
+set_config:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hapcbridge
+    config:
+      required: true
+      example: '{"temperatureUnit": "F", "updateIntervalSeconds": 5}'
+      selector:
+        object:

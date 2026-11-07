@@ -1,0 +1,136 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "confirm": {
+        "title": "Добавить {name}?",
+        "description": "HA PC Bridge нашёл компьютер **{name}** (`{device_id}`) на MQTT-брокере."
+      },
+      "user": {
+        "title": "Добавить компьютер",
+        "description": "Обычно компьютеры находятся автоматически. Введите deviceId из config.json службы.",
+        "data": {
+          "device_id": "ID устройства",
+          "base_topic": "Базовый топик"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Этот компьютер уже добавлен",
+      "invalid_discovery_info": "Неожиданный MQTT-топик"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "cpu_load": {
+        "name": "Загрузка CPU"
+      },
+      "cpu_temp": {
+        "name": "Температура CPU"
+      },
+      "cpu_power": {
+        "name": "Мощность CPU"
+      },
+      "gpu_load": {
+        "name": "Загрузка GPU"
+      },
+      "gpu_temp": {
+        "name": "Температура GPU"
+      },
+      "gpu_power": {
+        "name": "Мощность GPU"
+      },
+      "gpu_memory_used": {
+        "name": "Память GPU"
+      },
+      "ram_free": {
+        "name": "Свободная RAM"
+      },
+      "ram_usage": {
+        "name": "Загрузка RAM"
+      },
+      "total_power": {
+        "name": "Потребление"
+      },
+      "logged_user": {
+        "name": "Пользователь"
+      },
+      "last_login": {
+        "name": "Последний вход"
+      },
+      "last_boot": {
+        "name": "Последняя загрузка"
+      },
+      "active_window": {
+        "name": "Активное окно"
+      },
+      "active_process": {
+        "name": "Активный процесс"
+      },
+      "idle_time": {
+        "name": "Время простоя"
+      },
+      "mac": {
+        "name": "MAC-адрес"
+      },
+      "ip": {
+        "name": "IP-адрес"
+      }
+    },
+    "binary_sensor": {
+      "locked": {
+        "name": "Заблокирован"
+      }
+    },
+    "switch": {
+      "power": {
+        "name": "Питание"
+      }
+    },
+    "button": {
+      "shutdown": {
+        "name": "Выключить"
+      },
+      "restart": {
+        "name": "Перезагрузить"
+      },
+      "abort_shutdown": {
+        "name": "Отменить выключение"
+      },
+      "sleep": {
+        "name": "Сон"
+      },
+      "hibernate": {
+        "name": "Гибернация"
+      },
+      "lock": {
+        "name": "Заблокировать"
+      },
+      "logoff": {
+        "name": "Выйти из системы"
+      },
+      "monitor_off": {
+        "name": "Выключить монитор"
+      },
+      "close_active_window": {
+        "name": "Закрыть активное окно"
+      }
+    }
+  },
+  "services": {
+    "set_config": {
+      "name": "Изменить настройки ПК",
+      "description": "Отправляет на ПК часть настроек (ключи как в config.json, без настроек брокера).",
+      "fields": {
+        "config_entry_id": {
+          "name": "Компьютер",
+          "description": "Запись интеграции компьютера"
+        },
+        "config": {
+          "name": "Настройки",
+          "description": "Например {\"temperatureUnit\": \"F\", \"sensors\": {\"idleTime\": false}}"
+        }
+      }
+    }
+  }
+}

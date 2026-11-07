@@ -120,12 +120,14 @@ internal sealed class BridgeWorker : BackgroundService
         var sub = _factory.CreateSubscribeOptionsBuilder()
             .WithTopicFilter(_disc.T.Command, MqttQualityOfServiceLevel.AtLeastOnce)
             .WithTopicFilter(_disc.T.PowerSet, MqttQualityOfServiceLevel.AtLeastOnce)
+            .WithTopicFilter(_disc.T.ConfigSet, MqttQualityOfServiceLevel.AtLeastOnce)
             .WithTopicFilter($"{_cfg.DiscoveryPrefix}/status", MqttQualityOfServiceLevel.AtLeastOnce)
             .Build();
         await _mqtt.SubscribeAsync(sub, ct);
 
         await PublishDiscoveryAsync(ct);
         await PublishInfoAsync(ct);
+        await PublishConfigAsync(ct);
         await PublishAsync(_disc.T.Availability, "online", retain: true, ct);
         UpdateAgentStatus($"Подключено к {m.Host}");
     }
@@ -161,7 +163,7 @@ internal sealed class BridgeWorker : BackgroundService
             foreach (var e in _disc.All())
             {
                 var topic = _disc.ConfigTopic(e);
-                if (e.Enabled && e.Payload != null)
+                if (_cfg.HaDiscovery && e.Enabled && e.Payload != null)
                 {
                     wanted.Add(topic);
                     await PublishAsync(topic, Discovery.Serialize(e.Payload), retain: true, ct);
@@ -195,6 +197,9 @@ internal sealed class BridgeWorker : BackgroundService
         };
         await PublishAsync(_disc.T.Info, info.ToJsonString(), retain: true, ct);
     }
+
+    Task PublishConfigAsync(CancellationToken ct) =>
+        PublishAsync(_disc.T.ConfigState, RemoteConfig.Public(_cfg).ToJsonString(), retain: true, ct);
 
     async Task PublishStateAsync(CancellationToken ct)
     {
@@ -317,6 +322,8 @@ internal sealed class BridgeWorker : BackgroundService
             return;
         }
 
+        if (topic == _disc.T.ConfigSet) { ApplyRemoteConfig(payload); return; }
+
         if (topic == _disc.T.Command) Execute(payload.ToLowerInvariant());
     }
 
@@ -376,6 +383,23 @@ internal sealed class BridgeWorker : BackgroundService
         }
     }
 
+    // ---------------- Remote config (from the HA integration / card) ----------------
+
+    void ApplyRemoteConfig(string payload)
+    {
+        if (!_cfg.AllowRemoteConfig) { _log.LogWarning("Remote config change ignored: allowRemoteConfig is off"); return; }
+        try
+        {
+            if (JsonNode.Parse(payload) is not JsonObject patch) { _log.LogWarning("config/set: expected a JSON object"); return; }
+            var rejected = new List<string>();
+            var next = RemoteConfig.Apply(_cfg, patch, rejected);
+            if (rejected.Count > 0) _log.LogWarning("config/set: ignored keys {Keys}", string.Join(", ", rejected));
+            ConfigStore.Save(next); // the file watcher applies it like a local edit
+            _log.LogInformation("Settings changed from Home Assistant");
+        }
+        catch (Exception ex) { _log.LogWarning("config/set rejected: {Msg}", ex.Message); }
+    }
+
     // ---------------- Config reload ----------------
 
     void WatchConfig()
@@ -422,6 +446,8 @@ internal sealed class BridgeWorker : BackgroundService
         {
             await PublishDiscoveryAsync(ct);
             await PublishInfoAsync(ct);
+            await PublishConfigAsync(ct);
+            await PublishStateAsync(ct);
         }
     }
 
