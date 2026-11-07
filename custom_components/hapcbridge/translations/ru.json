@@ -84,7 +84,7 @@
     },
     "switch": {
       "power": {
-        "name": "Питание"
+        "name": "Компьютер"
       }
     },
     "button": {
@@ -130,6 +130,42 @@
           "name": "Настройки",
           "description": "Например {\"temperatureUnit\": \"F\", \"sensors\": {\"idleTime\": false}}"
         }
+      }
+    },
+    "command": {
+      "name": "Команда компьютеру",
+      "description": "Отправляет команду объекту «Компьютер».",
+      "fields": {
+        "command": {
+          "name": "Команда",
+          "description": ""
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Сущности",
+        "description": "Объект «Компьютер» (switch.<id>_computer) создаётся всегда: состояние вкл/выкл, все датчики в атрибутах, команды через действие hapcbridge.command. Здесь можно дополнительно создавать отдельные сущности на каждый датчик и команду.",
+        "data": {
+          "separate_entities": "Отдельные сущности датчиков и кнопок"
+        }
+      }
+    }
+  },
+  "selector": {
+    "command": {
+      "options": {
+        "shutdown": "Выключить",
+        "restart": "Перезагрузить",
+        "abort_shutdown": "Отменить выключение",
+        "sleep": "Сон",
+        "hibernate": "Гибернация",
+        "lock": "Заблокировать",
+        "logoff": "Выйти из системы",
+        "monitor_off": "Выключить монитор",
+        "close_active_window": "Закрыть активное окно"
       }
     }
   }

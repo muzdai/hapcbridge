@@ -12,6 +12,8 @@ from .entity import PcEntity
 
 async def async_setup_entry(hass: HomeAssistant, entry: PcConfigEntry, add: AddEntitiesCallback) -> None:
     hub = entry.runtime_data
+    if not hub.separate_entities:
+        return
     if hub.sensor_enabled("locked"):
         add([PcLocked(hub)])
 

@@ -117,3 +117,37 @@ async def test_mqtt_discovery_flow(hass: HomeAssistant, mqtt_mock) -> None:
     assert result["type"] == "create_entry"
     assert result["title"] == "GAMING-PC"
     assert result["data"] == {"device_id": "gaming_pc", "base_topic": "hapcbridge"}
+
+
+async def test_computer_object(hass: HomeAssistant, mqtt_mock) -> None:
+    await _setup(hass, mqtt_mock)
+    comp = hass.states.get("switch.gaming_pc_computer")
+    assert comp is not None and comp.state == "on"
+    a = comp.attributes
+    assert a["cpu_load"] == 23.0 and a["ram_free"] == 18.4 and a["active_window"] == "Notepad"
+    assert a["logged_user"] == "vlad" and a["mac"] == "9C:6B:00:12:AB:CD" and a["temperature_unit"] == "°C"
+    assert "idle_time" not in a                       # disabled sensor isn't an attribute
+    assert "close_active_window" in a["commands"] and "sleep" not in a["commands"]
+
+    await hass.services.async_call(DOMAIN, "command", {"entity_id": "switch.gaming_pc_computer", "command": "close_active_window"}, blocking=True)
+    mqtt_mock.async_publish.assert_any_call(f"{ROOT}/command", "close_active_window", 1, False)
+
+    import pytest
+    from homeassistant.exceptions import ServiceValidationError
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(DOMAIN, "command", {"entity_id": "switch.gaming_pc_computer", "command": "sleep"}, blocking=True)
+
+    async_fire_mqtt_message(hass, f"{ROOT}/availability", "offline")
+    await hass.async_block_till_done()
+    comp = hass.states.get("switch.gaming_pc_computer")
+    assert comp.state == "off" and comp.attributes["cpu_load"] is None and comp.attributes["ip"] == "192.168.1.50"
+
+
+async def test_object_only_option(hass: HomeAssistant, mqtt_mock) -> None:
+    entry = await _setup(hass, mqtt_mock)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"separate_entities": False})
+    assert result["type"] == "create_entry"
+    await hass.async_block_till_done()
+    ids = [e.entity_id for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)]
+    assert ids == ["switch.gaming_pc_computer"]

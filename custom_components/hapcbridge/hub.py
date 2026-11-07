@@ -14,7 +14,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import CONF_BASE_TOPIC, CONF_DEVICE_ID, DEFAULT_BASE_TOPIC, DOMAIN, SIGNAL_UPDATE
+from .const import (
+    COMMAND_TOGGLE,
+    CONF_BASE_TOPIC,
+    CONF_DEVICE_ID,
+    CONF_SEPARATE_ENTITIES,
+    DEFAULT_BASE_TOPIC,
+    DOMAIN,
+    SENSOR_TOGGLE,
+    SIGNAL_UPDATE,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,6 +133,40 @@ class PcHub:
         )
 
     # ------------------------------------------------------------------ helpers for entities
+
+    @property
+    def separate_entities(self) -> bool:
+        """Also create one entity per sensor/command (on by default), besides the Computer object."""
+        return bool(self.entry.options.get(CONF_SEPARATE_ENTITIES, True))
+
+    def enabled_commands(self) -> list[str]:
+        return [key for key, toggle in COMMAND_TOGGLE.items() if self.command_enabled(toggle)]
+
+    def computer_attributes(self) -> dict[str, Any]:
+        """Everything about the PC in one dict — the attributes of the Computer entity."""
+        live = self.state if self.online else {}
+        attrs: dict[str, Any] = {}
+        for key, toggle in SENSOR_TOGGLE.items():
+            if self.sensor_enabled(toggle):
+                attrs[key] = live.get(key)
+        if self.sensor_enabled("gpuLoad"):
+            attrs["gpu_name"] = live.get("gpu_name")
+        if self.sensor_enabled("totalPower"):
+            attrs["total_power_source"] = live.get("total_power_source")
+        attrs.update(
+            {
+                "temperature_unit": "°F" if self.fahrenheit else "°C",
+                "ip": self.info.get("ip"),
+                "mac": self.wol_mac,
+                "broadcast": self.wol_broadcast,
+                "hostname": self.info.get("hostname"),
+                "os": self.info.get("os"),
+                "bridge_version": self.info.get("version"),
+                "device_id": self.device_id,
+                "commands": self.enabled_commands(),
+            }
+        )
+        return attrs
 
     def sensor_enabled(self, toggle: str) -> bool:
         return bool(self.config.get("sensors", {}).get(toggle, True))

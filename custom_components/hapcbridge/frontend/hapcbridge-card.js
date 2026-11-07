@@ -1,5 +1,5 @@
 /* HA PC Bridge card — status, controls and settings for one PC. No build step. */
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.3.0";
 
 const I18N = {
   ru: {
@@ -129,26 +129,30 @@ class HaPcBridgeCard extends HTMLElement {
   }
 
   // ---------------------------------------------------------------- helpers
-  _st(key) {
-    const id = this._device?.entities?.[key];
+  // Everything comes from the Computer entity (switch.<pc>_computer) and its attributes.
+  _comp() {
+    const id = this._device?.entities?.power;
     return id ? this._hass.states[id] : undefined;
   }
+  _attrs() { return this._comp()?.attributes || {}; }
+  _has(key) { return key in this._attrs(); }
   _val(key) {
-    const s = this._st(key);
-    return !s || s.state === "unknown" || s.state === "unavailable" ? null : s.state;
+    const v = this._attrs()[key];
+    return v === undefined || v === null || v === "" ? null : v;
   }
   _num(key, digits = 0) {
     const v = this._val(key);
     if (v === null || isNaN(Number(v))) return "—";
     return Number(v).toFixed(digits);
   }
-  _unit(key) { return this._st(key)?.attributes?.unit_of_measurement || ""; }
-  _online() { return this._st("power")?.state === "on"; }
+  _unit(key) { return key.endsWith("_temp") ? this._attrs().temperature_unit || "°C" : ""; }
+  _online() { return this._comp()?.state === "on"; }
+  _cmd(key) { return (this._attrs().commands || []).includes(key); }
 
   _call(domain, service, data) { return this._hass.callService(domain, service, data); }
   _press(key) {
-    const id = this._device?.entities?.[key];
-    if (id) this._call("button", "press", { entity_id: id });
+    const id = this._device?.entities?.power;
+    if (id) this._call("hapcbridge", "command", { entity_id: id, command: key });
   }
 
   // ---------------------------------------------------------------- render
@@ -166,7 +170,7 @@ class HaPcBridgeCard extends HTMLElement {
   _renderStatus() {
     const root = this.shadowRoot?.getElementById("status");
     if (!root || !this._device) return;
-    const t = this._t, on = this._online(), e = this._device.entities;
+    const t = this._t, on = this._online(), e = this._device.entities, h = (k) => this._has(k);
 
     const user = this._val("logged_user");
     const login = this._val("last_login");
@@ -177,18 +181,18 @@ class HaPcBridgeCard extends HTMLElement {
     if (on && boot) sub.push(`${t.uptime} ${this._dur((Date.now() - new Date(boot)) / 1000)}`);
     if (!on && this._device.info?.ip) sub.push(esc(this._device.info.ip));
 
-    const src = this._st("total_power")?.attributes?.source || "";
+    const src = this._val("total_power_source") || "";
     const tile = (label, v, x) => `<div class="tile"><div class="l">${label}</div><div class="v">${v}</div><div class="x">${x || "&nbsp;"}</div></div>`;
     const tiles = [
-      e.cpu_load || e.cpu_temp ? tile(t.cpu, `${this._num("cpu_load")}%`, this._join(this._temp("cpu_temp"), this._w("cpu_power"))) : "",
-      e.gpu_load || e.gpu_temp ? tile(t.gpu, `${this._num("gpu_load")}%`, this._join(this._temp("gpu_temp"), this._w("gpu_power"))) : "",
-      e.ram_free ? tile(t.ram, `${this._num("ram_free", 1)} ${this._unit("ram_free") || "GB"}`, e.ram_usage && this._val("ram_usage") !== null ? `${this._num("ram_usage")}%` : "") : "",
-      e.total_power ? tile(t.power, `${this._num("total_power")} W`, src === "estimate" ? t.estimate : src.startsWith("psu") ? "PSU" : "") : "",
+      h("cpu_load") || h("cpu_temp") ? tile(t.cpu, `${this._num("cpu_load")}%`, this._join(this._temp("cpu_temp"), this._w("cpu_power"))) : "",
+      h("gpu_load") || h("gpu_temp") ? tile(t.gpu, `${this._num("gpu_load")}%`, this._join(this._temp("gpu_temp"), this._w("gpu_power"))) : "",
+      h("ram_free") ? tile(t.ram, `${this._num("ram_free", 1)} GB`, h("ram_usage") && this._val("ram_usage") !== null ? `${this._num("ram_usage")}%` : "") : "",
+      h("total_power") ? tile(t.power, `${this._num("total_power")} W`, src === "estimate" ? t.estimate : src.startsWith("psu") ? "PSU" : "") : "",
     ].join("");
 
     const win = this._val("active_window");
     const btn = (key, icon, label, extra = "") =>
-      e[key] ? `<button class="b ${extra}" data-press="${key}" ${on ? "" : "disabled"}><ha-icon icon="${icon}"></ha-icon>${label}</button>` : "";
+      this._cmd(key) ? `<button class="b ${extra}" data-press="${key}" ${on ? "" : "disabled"}><ha-icon icon="${icon}"></ha-icon>${label}</button>` : "";
 
     root.innerHTML = `
       <div class="head">
@@ -198,7 +202,7 @@ class HaPcBridgeCard extends HTMLElement {
         ${e.power ? `<ha-switch id="pw" ${on ? "checked" : ""}></ha-switch>` : ""}
       </div>
       ${tiles ? `<div class="tiles">${tiles}</div>` : ""}
-      ${e.active_window || e.close_active_window ? `<div class="row" style="margin-top:10px">
+      ${h("active_window") || this._cmd("close_active_window") ? `<div class="row" style="margin-top:10px">
         <span class="grow"><ha-icon icon="mdi:application-outline" style="--mdc-icon-size:16px"></ha-icon> ${esc(on && win ? win : t.noWindow)}</span>
         ${btn("close_active_window", "mdi:close", t.closeWindow)}</div>` : ""}
       <div class="actions">
@@ -220,7 +224,7 @@ class HaPcBridgeCard extends HTMLElement {
     if (this._open && this._formOnline !== on) this._renderSettings();
   }
 
-  _temp(key) { const v = this._num(key); return v === "—" ? "" : `${v}${this._unit(key) || "°C"}`; }
+  _temp(key) { const v = this._num(key); return v === "—" ? "" : `${v}${this._unit(key)}`; }
   _w(key) { const v = this._num(key); return v === "—" ? "" : `${v} W`; }
   _join(...p) { return p.filter(Boolean).join(" · "); }
   _dur(s) {

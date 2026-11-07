@@ -10,3 +10,26 @@ set_config:
       example: '{"temperatureUnit": "F", "updateIntervalSeconds": 5}'
       selector:
         object:
+
+command:
+  target:
+    entity:
+      integration: hapcbridge
+      domain: switch
+  fields:
+    command:
+      required: true
+      example: close_active_window
+      selector:
+        select:
+          translation_key: command
+          options:
+            - shutdown
+            - restart
+            - abort_shutdown
+            - sleep
+            - hibernate
+            - lock
+            - logoff
+            - monitor_off
+            - close_active_window

@@ -12,6 +12,23 @@
    device_id: gaming_pc
    ```
 
+### Объект «Компьютер»
+
+Главная сущность — `switch.<deviceId>_computer`:
+- **состояние** `on`/`off` — ПК на связи или нет; включение = Wake-on-LAN, выключение = shutdown через службу;
+- **атрибуты** — все включённые датчики (`cpu_load`, `cpu_temp`, `gpu_load`, `ram_free`, `total_power`, `logged_user`, `last_login`, `active_window`, `idle_time`, `locked`…), плюс `ip`, `mac`, `temperature_unit`, `commands` (доступные команды). Пока ПК выключен, живые значения равны `null`;
+- **команды** — действие `hapcbridge.command`:
+  ```yaml
+  action: hapcbridge.command
+  target:
+    entity_id: switch.gaming_pc_computer
+  data:
+    command: close_active_window   # shutdown, restart, abort_shutdown, sleep, hibernate, lock, logoff, monitor_off
+  ```
+- в шаблонах: `{{ state_attr('switch.gaming_pc_computer', 'cpu_temp') }}`, в автоматизациях — триггер «состояние/атрибут».
+
+Отдельные сущности на каждый датчик и кнопку по умолчанию тоже создаются (для графиков, статистики, энергии). Отключить: *Устройства и службы → HA PC Bridge → Настроить → «Отдельные сущности датчиков и кнопок»* — останется только объект «Компьютер».
+
 Что даёт интеграция по сравнению с «голым» MQTT Discovery:
 - **Wake-on-LAN встроен**: переключатель *Питание* сам шлёт magic packet, автоматизация и `wake_on_lan:` не нужны.
 - **Настройки ПК с карточки** (⚙): частота обновления, °C/°F, трей, задержка выключения, MAC/broadcast для WoL, основная GPU, «прочее железо» для расчёта потребления, включение/выключение каждого датчика и команды. Пока ПК выключен, настройки показываются неактивными.

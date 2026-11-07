@@ -25,6 +25,8 @@ ICONS = {
 
 async def async_setup_entry(hass: HomeAssistant, entry: PcConfigEntry, add: AddEntitiesCallback) -> None:
     hub = entry.runtime_data
+    if not hub.separate_entities:
+        return
     add(PcButton(hub, key) for key, toggle in COMMAND_TOGGLE.items() if hub.command_enabled(toggle))
 
 

@@ -64,8 +64,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: PcConfigEntry) -> bool:
         hass.config_entries.async_schedule_reload(entry.entry_id)
 
     hub.on_layout_change = _reload
+    entry.async_on_unload(entry.add_update_listener(_options_updated))
+    if not hub.separate_entities:
+        # "Computer object only": drop the per-sensor entities left from before.
+        registry = er.async_get(hass)
+        for ent in er.async_entries_for_config_entry(registry, entry.entry_id):
+            if ent.unique_id != f"hapcbridge_{hub.device_id}_power":
+                registry.async_remove(ent.entity_id)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: PcConfigEntry) -> bool:

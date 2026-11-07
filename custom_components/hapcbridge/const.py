@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 DOMAIN = "hapcbridge"
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 CONF_DEVICE_ID = "device_id"
 CONF_BASE_TOPIC = "base_topic"
+CONF_SEPARATE_ENTITIES = "separate_entities"
 DEFAULT_BASE_TOPIC = "hapcbridge"
 
 CARD_URL = "/hapcbridge_static/hapcbridge-card.js"

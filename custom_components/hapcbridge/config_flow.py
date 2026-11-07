@@ -7,14 +7,20 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.core import callback
 from homeassistant.helpers.service_info.mqtt import MqttServiceInfo
 
-from .const import CONF_BASE_TOPIC, CONF_DEVICE_ID, DEFAULT_BASE_TOPIC, DOMAIN
+from .const import CONF_BASE_TOPIC, CONF_DEVICE_ID, CONF_SEPARATE_ENTITIES, DEFAULT_BASE_TOPIC, DOMAIN
 
 
 class PcBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        return PcBridgeOptionsFlow()
 
     def __init__(self) -> None:
         self._device_id: str | None = None
@@ -70,4 +76,17 @@ class PcBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(
             title=self._title or self._device_id or "PC",
             data={CONF_DEVICE_ID: self._device_id, CONF_BASE_TOPIC: self._base},
+        )
+
+
+class PcBridgeOptionsFlow(OptionsFlow):
+    """Computer object only, or the object plus one entity per sensor/command."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+        current = self.config_entry.options.get(CONF_SEPARATE_ENTITIES, True)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({vol.Required(CONF_SEPARATE_ENTITIES, default=current): bool}),
         )

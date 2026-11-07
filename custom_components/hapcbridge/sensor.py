@@ -60,6 +60,8 @@ SENSORS: tuple[PcSensorDescription, ...] = (
 
 async def async_setup_entry(hass: HomeAssistant, entry: PcConfigEntry, add: AddEntitiesCallback) -> None:
     hub = entry.runtime_data
+    if not hub.separate_entities:
+        return
     entities: list[SensorEntity] = [
         PcSensor(hub, d) for d in SENSORS if hub.sensor_enabled(SENSOR_TOGGLE[d.key])
     ]

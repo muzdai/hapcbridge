@@ -84,7 +84,7 @@
     },
     "switch": {
       "power": {
-        "name": "Power"
+        "name": "Computer"
       }
     },
     "button": {
@@ -130,6 +130,42 @@
           "name": "Settings",
           "description": "For example {\"temperatureUnit\": \"F\", \"sensors\": {\"idleTime\": false}}"
         }
+      }
+    },
+    "command": {
+      "name": "PC command",
+      "description": "Sends a command to the Computer object.",
+      "fields": {
+        "command": {
+          "name": "Command",
+          "description": ""
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Entities",
+        "description": "The Computer object (switch.<id>_computer) is always created: on/off state, every sensor as an attribute, commands through the hapcbridge.command action. Optionally also create one entity per sensor and command.",
+        "data": {
+          "separate_entities": "Separate sensor and button entities"
+        }
+      }
+    }
+  },
+  "selector": {
+    "command": {
+      "options": {
+        "shutdown": "Shutdown",
+        "restart": "Restart",
+        "abort_shutdown": "Abort shutdown",
+        "sleep": "Sleep",
+        "hibernate": "Hibernate",
+        "lock": "Lock",
+        "logoff": "Log off",
+        "monitor_off": "Monitor off",
+        "close_active_window": "Close active window"
       }
     }
   }
