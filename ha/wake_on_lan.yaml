@@ -1,0 +1,28 @@
+# Wake-on-LAN for every PC running HA PC Bridge.
+#
+# Turning the "Power" switch ON publishes "ON" to hapcbridge/<device_id>/power/set.
+# A powered-off PC can't receive that, so Home Assistant sends the magic packet itself,
+# using the MAC the bridge published (retained) while the PC was running.
+#
+# 1) configuration.yaml needs the WoL action:
+#      wake_on_lan:
+# 2) Paste this automation (Settings → Automations → ⋮ → Edit in YAML).
+
+alias: HA PC Bridge — Wake on LAN
+description: Wake the PC when its Power switch is turned on
+mode: queued
+triggers:
+  - trigger: mqtt
+    topic: hapcbridge/+/power/set
+    payload: "ON"
+variables:
+  device_id: "{{ trigger.topic.split('/')[1] }}"
+  mac_entity: "sensor.{{ device_id }}_mac"
+actions:
+  - condition: template
+    value_template: "{{ states(mac_entity) not in ['unknown', 'unavailable', 'none', ''] }}"
+  - action: wake_on_lan.send_magic_packet
+    data:
+      mac: "{{ states(mac_entity) }}"
+      broadcast_address: "{{ state_attr(mac_entity, 'broadcast') or '255.255.255.255' }}"
+      broadcast_port: 9

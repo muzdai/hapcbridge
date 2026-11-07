@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>HaPcBridge.Agent</AssemblyName>
+    <RootNamespace>HaPcBridge.Agent</RootNamespace>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HaPcBridge.Common\HaPcBridge.Common.csproj" />
+  </ItemGroup>
+</Project>

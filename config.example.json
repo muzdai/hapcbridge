@@ -1,0 +1,65 @@
+{
+  // %ProgramData%\HaPcBridge\config.json — служба подхватывает изменения сама, перезапуск не нужен.
+  "mqtt": {
+    "host": "192.168.1.253",
+    "port": 1883,
+    "username": "hapcbridge",
+    // При первом запуске пароль шифруется (DPAPI) в passwordProtected, а это поле очищается.
+    "password": "change-me",
+    "useTls": false,
+    "allowUntrustedCertificates": false,
+    "keepAliveSeconds": 30
+  },
+  "deviceId": "",              // пусто = имя компьютера
+  "deviceName": "",            // имя устройства в HA, пусто = имя компьютера
+  "baseTopic": "hapcbridge",
+  "discoveryPrefix": "homeassistant",
+  "updateIntervalSeconds": 10,
+  "temperatureUnit": "C",      // "C" или "F"
+  "primaryGpu": "",            // часть имени GPU, напр. "4080"; пусто = NVIDIA, иначе карта с наибольшей VRAM
+  "trayIcon": true,
+
+  "sensors": {
+    "cpuLoad": true,
+    "cpuTemp": true,
+    "cpuPower": true,
+    "gpuLoad": true,
+    "gpuTemp": true,
+    "gpuPower": true,
+    "gpuMemory": true,
+    "ramFree": true,
+    "ramUsage": true,
+    "totalPower": true,
+    "loggedUser": true,
+    "lastLogin": true,
+    "lastBoot": true,
+    "activeWindow": true,
+    "activeProcess": true,
+    "idleTime": true,
+    "locked": true
+  },
+
+  "commands": {
+    "powerSwitch": true,
+    "shutdown": true,
+    "restart": true,
+    "sleep": true,
+    "hibernate": false,
+    "lock": true,
+    "logoff": true,
+    "monitorOff": true,
+    "closeActiveWindow": true,
+    "abortShutdown": true,
+    "shutdownDelaySeconds": 30   // предупреждение перед выключением/перезагрузкой, 0 = сразу
+  },
+
+  "power": {
+    "baselineWatts": 60,         // всё, что датчики не видят: плата, RAM, диски, вентиляторы, NIC
+    "psuEfficiency": 0.90        // КПД блока питания для пересчёта в потребление от розетки
+  },
+
+  "wol": {
+    "mac": "",                   // пусто = MAC сетевой карты с маршрутом по умолчанию
+    "broadcastAddress": "192.168.1.255"
+  }
+}
