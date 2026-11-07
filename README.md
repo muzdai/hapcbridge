@@ -74,14 +74,14 @@
    HaPcBridge.Service.exe install
    ```
    Создаётся служба `HaPcBridge` (автозапуск с задержкой, перезапуск при сбое) и `%ProgramData%\HaPcBridge\config.json`.
-4. Открой конфиг (`HaPcBridge.Service.exe config` или пункт меню в трее), впиши `mqtt.host`, `username`, `password`. Служба подхватит изменения сама.
+4. Правый клик по значку в трее → **Настройки…** (или двойной клик): брокер, логин/пароль, частота, °C/°F, WoL, датчики и команды. Окно работает без прав администратора — изменения сохраняет служба. Если значок скрыт: `HaPcBridge.Agent.exe --settings`.
 5. Удаление: `HaPcBridge.Service.exe uninstall`.
 
 Отладка: остановить службу и запустить `HaPcBridge.Service.exe` из админской консоли — лог в консоли; агент тогда запусти вручную. Логи службы: `%ProgramData%\HaPcBridge\logs`, предупреждения дублируются в журнал событий Windows (источник `HaPcBridge`).
 
 ## Настройки
 
-Пример со всеми параметрами — [`config.example.json`](config.example.json). Главное:
+Всё ниже настраивается в окне настроек из трея или с карточки HA. Сам файл `%ProgramData%\HaPcBridge\config.json` доступен только администраторам и SYSTEM; пример со всеми параметрами — [`config.example.json`](config.example.json). Главное:
 
 - `temperatureUnit` — `"C"` или `"F"`
 - `trayIcon` — показывать значок в трее

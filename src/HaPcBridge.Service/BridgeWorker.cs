@@ -44,6 +44,7 @@ internal sealed class BridgeWorker : BackgroundService
         };
         _agent = new AgentHost(log);
         _agent.AgentConnected += PushAgentConfig;
+        _agent.Request = HandleAgentRequest;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -398,6 +399,47 @@ internal sealed class BridgeWorker : BackgroundService
             _log.LogInformation("Settings changed from Home Assistant");
         }
         catch (Exception ex) { _log.LogWarning("config/set rejected: {Msg}", ex.Message); }
+    }
+
+    // ---------------- Settings window in the agent ----------------
+
+    /// <summary>
+    /// The agent runs as the logged-on user and can't write %ProgramData%\HaPcBridge, so it edits
+    /// the config through us. Only our own agent in the console session can reach this pipe.
+    /// </summary>
+    IpcMessage? HandleAgentRequest(IpcMessage msg)
+    {
+        switch (msg.Type)
+        {
+            case "get_config":
+            {
+                var copy = JsonSerializer.Deserialize<BridgeConfig>(JsonSerializer.Serialize(_cfg, ConfigStore.JsonOptions), ConfigStore.JsonOptions)!;
+                var hasPassword = !string.IsNullOrEmpty(ConfigStore.GetPassword(copy.Mqtt));
+                copy.Mqtt.Password = null;
+                copy.Mqtt.PasswordProtected = null;
+                return new IpcMessage
+                {
+                    Type = "full_config",
+                    ConfigJson = JsonSerializer.Serialize(copy, ConfigStore.JsonOptions),
+                    HasPassword = hasPassword,
+                    StatusText = _lastStatusText,
+                };
+            }
+            case "set_config":
+            {
+                var next = JsonSerializer.Deserialize<BridgeConfig>(msg.ConfigJson ?? "", ConfigStore.JsonOptions)
+                           ?? throw new InvalidOperationException("empty config");
+                // Keep the stored password unless a new one was typed; a new one is encrypted on reload.
+                next.Mqtt.PasswordProtected = _cfg.Mqtt.PasswordProtected;
+                next.Mqtt.Password = string.IsNullOrEmpty(msg.Password) ? _cfg.Mqtt.Password : msg.Password;
+                if (string.IsNullOrWhiteSpace(next.Mqtt.Host)) throw new InvalidOperationException("MQTT host is empty");
+                ConfigStore.Normalize(next);
+                ConfigStore.Save(next); // the file watcher applies it
+                _log.LogInformation("Settings changed from the tray settings window");
+                return new IpcMessage { Type = "saved", Ok = true };
+            }
+        }
+        return null;
     }
 
     // ---------------- Config reload ----------------

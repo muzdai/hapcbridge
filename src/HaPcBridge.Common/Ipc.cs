@@ -25,7 +25,7 @@ public static class Ipc
 
 public sealed class IpcMessage
 {
-    /// <summary>agent → service: "hello", "status". service → agent: "command", "config".</summary>
+    /// <summary>agent → service: "hello", "status", "get_config", "set_config". service → agent: "command", "config", "full_config", "saved".</summary>
     public string Type { get; set; } = "";
 
     // hello
@@ -44,6 +44,14 @@ public sealed class IpcMessage
     // config
     public bool? TrayIcon { get; set; }
     public string? StatusText { get; set; }
+
+    // settings window: get_config / set_config (agent → service), full_config / saved (service → agent)
+    public string? ConfigJson { get; set; }
+    /// <summary>New MQTT password from the settings window; null = keep the stored one.</summary>
+    public string? Password { get; set; }
+    public bool? HasPassword { get; set; }
+    public bool? Ok { get; set; }
+    public string? Error { get; set; }
 
     public static IpcMessage Cmd(string command) => new() { Type = "command", Command = command };
 }

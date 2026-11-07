@@ -22,6 +22,10 @@ internal sealed class AgentContext : ApplicationContext
     readonly CancellationTokenSource _cts = new();
     readonly object _writeLock = new();
     StreamWriter? _writer;
+    TaskCompletionSource<IpcMessage>? _pending;
+    string? _pendingType;
+    SettingsForm? _settings;
+    readonly EventWaitHandle _openSettingsSignal;
     bool _locked;
     string? _lastSent;
     DateTime _lastSentAt;
@@ -34,8 +38,9 @@ internal sealed class AgentContext : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Настройки (config.json)…", null, (_, _) => OpenConfig());
-        menu.Items.Add("Папка логов", null, (_, _) => Shell(ConfigStore.LogDirectory));
+        var settingsItem = new ToolStripMenuItem("Настройки…", null, async (_, _) => await OpenSettingsAsync());
+        settingsItem.Font = new Font(settingsItem.Font, FontStyle.Bold);
+        menu.Items.Add(settingsItem);
 
         // config.json is readable only by admins/SYSTEM (it holds the MQTT password);
         // the service pushes the tray setting over the pipe right after we connect.
@@ -46,6 +51,14 @@ internal sealed class AgentContext : ApplicationContext
             ContextMenuStrip = menu,
             Visible = false,
         };
+        _tray.DoubleClick += async (_, _) => await OpenSettingsAsync();
+
+        // "HaPcBridge.Agent.exe --settings" from a second process (Start menu shortcut, icon hidden) opens the window here.
+        _openSettingsSignal = new EventWaitHandle(false, EventResetMode.AutoReset, Program.OpenSettingsEvent);
+        ThreadPool.RegisterWaitForSingleObject(_openSettingsSignal,
+            (_, _) => _ui.Post(async _ => await OpenSettingsAsync(), null), null, Timeout.Infinite, executeOnlyOnce: false);
+        if (Environment.GetCommandLineArgs().Contains("--settings"))
+            _ui.Post(async _ => { await Task.Delay(3000); await OpenSettingsAsync(); }, null);
 
         SystemEvents.SessionSwitch += OnSessionSwitch;
 
@@ -80,7 +93,10 @@ internal sealed class AgentContext : ApplicationContext
                     var line = await reader.ReadLineAsync(ct);
                     if (line == null) break;
                     var msg = Ipc.Deserialize(line);
-                    if (msg != null) _ui.Post(_ => Handle(msg), null);
+                    if (msg == null) continue;
+                    var pending = _pending;
+                    if (pending != null && msg.Type == _pendingType) { pending.TrySetResult(msg); continue; }
+                    _ui.Post(_ => Handle(msg), null);
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
@@ -93,6 +109,50 @@ internal sealed class AgentContext : ApplicationContext
 
             try { await Task.Delay(3000, ct); } catch { break; }
         }
+    }
+
+    /// <summary>Sends a request and waits for the reply of the given type (one request at a time).</summary>
+    async Task<IpcMessage?> RequestAsync(IpcMessage m, string replyType, int timeoutMs = 5000)
+    {
+        var tcs = new TaskCompletionSource<IpcMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingType = replyType;
+        _pending = tcs;
+        try
+        {
+            lock (_writeLock) if (_writer == null) return null;
+            Write(m);
+            var done = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs));
+            return done == tcs.Task ? tcs.Task.Result : null;
+        }
+        finally { _pending = null; _pendingType = null; }
+    }
+
+    async Task OpenSettingsAsync()
+    {
+        if (_settings is { IsDisposed: false }) { _settings.Activate(); return; }
+
+        var reply = await RequestAsync(new IpcMessage { Type = "get_config" }, "full_config");
+        if (reply?.ConfigJson is not { } json)
+        {
+            MessageBox.Show("Служба HA PC Bridge не отвечает. Проверьте, что она запущена (services.msc → HA PC Bridge).",
+                "HA PC Bridge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        var cfg = System.Text.Json.JsonSerializer.Deserialize<BridgeConfig>(json, ConfigStore.JsonOptions) ?? new BridgeConfig();
+
+        _settings = new SettingsForm(cfg, reply.HasPassword == true, reply.StatusText, async (edited, password) =>
+        {
+            var r = await RequestAsync(new IpcMessage
+            {
+                Type = "set_config",
+                ConfigJson = System.Text.Json.JsonSerializer.Serialize(edited, ConfigStore.JsonOptions),
+                Password = password,
+            }, "saved");
+            return r == null ? (false, "Служба не ответила") : (r.Ok == true, r.Error);
+        });
+        _settings.FormClosed += (_, _) => _settings = null;
+        _settings.Show();
+        _settings.Activate();
     }
 
     void Write(IpcMessage m)
@@ -188,18 +248,6 @@ internal sealed class AgentContext : ApplicationContext
     }
 
     // ---------------- tray ----------------
-
-    static void OpenConfig()
-    {
-        // The file lives in ProgramData and is owned by the service, so edit it elevated.
-        try { Process.Start(new ProcessStartInfo("notepad.exe", $"\"{ConfigStore.ConfigPath}\"") { UseShellExecute = true, Verb = "runas" }); }
-        catch { /* UAC cancelled */ }
-    }
-
-    static void Shell(string path)
-    {
-        try { Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch { }
-    }
 
     static Icon MakeIcon()
     {

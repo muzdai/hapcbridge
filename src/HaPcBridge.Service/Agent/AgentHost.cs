@@ -31,6 +31,9 @@ internal sealed class AgentHost
     /// <summary>Called when a fresh agent connects, so the service can push config to it.</summary>
     public event Action? AgentConnected;
 
+    /// <summary>Handles request messages from the agent (settings window); the result is sent back.</summary>
+    public Func<IpcMessage, IpcMessage?>? Request { get; set; }
+
     public AgentHost(ILogger log) => _log = log;
 
     public async Task RunAsync(CancellationToken ct)
@@ -112,6 +115,13 @@ internal sealed class AgentHost
                 case "status":
                     LastStatus = msg;
                     LastStatusAt = DateTime.UtcNow;
+                    break;
+                default:
+                    IpcMessage? reply = null;
+                    try { reply = Request?.Invoke(msg); }
+                    catch (Exception ex) { reply = new IpcMessage { Type = "saved", Ok = false, Error = ex.Message }; }
+                    if (reply != null)
+                        lock (_lock) { try { writer.WriteLine(Ipc.Serialize(reply)); } catch { } }
                     break;
             }
         }
