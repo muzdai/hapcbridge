@@ -50,7 +50,7 @@
 
 ## Установка
 
-1. Скачай `hapcbridge-win-x64.zip` из Releases (или Actions → artifact) и распакуй, например, в `C:\Program Files\HaPcBridge`.
+1. Скачай `hapcbridge-win-x64.zip` (собранный локально архив) и распакуй, например, в `C:\Program Files\HaPcBridge`.
 2. Для температур CPU нужен драйвер **PawnIO** (LibreHardwareMonitor ≥ 0.9.5 перешёл на него со старого WinRing0, который Defender блокирует): поставь установщик PawnIO (релизы на GitHub у namazso; его же ставят свежие LibreHardwareMonitor/FanControl/OpenRGB). Без него температура/мощность CPU будут пустыми, остальное работает.
 3. Из админского терминала:
    ```
@@ -102,7 +102,7 @@ dotnet publish src/HaPcBridge.Service -c Release -r win-x64 --self-contained -p:
 dotnet publish src/HaPcBridge.Agent   -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish
 ```
 
-GitHub Actions собирает zip на каждый push, на тег `v*` — создаёт Release.
+Сборка делается локально, GitHub используется только для кода.
 
 ## Дальше по плану
 
