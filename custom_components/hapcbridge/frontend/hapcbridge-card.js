@@ -1,5 +1,5 @@
 /* HA PC Bridge card — status, controls and settings for one PC. No build step. */
-const CARD_VERSION = "0.3.0";
+const CARD_VERSION = "0.3.1";
 
 const I18N = {
   ru: {
@@ -106,8 +106,15 @@ class HaPcBridgeCard extends HTMLElement {
     const first = !this._hass;
     this._hass = hass;
     this._t = I18N[(hass.language || "en").startsWith("ru") ? "ru" : "en"];
-    if (first || !this._device) this._load();
-    else this._renderStatus();
+    if (first) { this._load(); return; }
+    if (!this._device) {
+      // PC not found (integration still starting, wrong id): look again, but not on every state change in the house.
+      if (Date.now() - (this._lastLoad || 0) > 10000) this._load();
+      return;
+    }
+    // HA calls this for every state change of every entity. Redraw only when our Computer entity changed.
+    const comp = this._comp();
+    if (comp !== this._shown || hass.language !== this._shownLang) this._renderStatus();
   }
 
   getCardSize() { return this._open ? 12 : 5; }
@@ -122,6 +129,7 @@ class HaPcBridgeCard extends HTMLElement {
   async _load() {
     if (this._loading) return;
     this._loading = true;
+    this._lastLoad = Date.now();
     const list = await fetchDevices(this._hass);
     this._loading = false;
     this._device = list.find((d) => d.device_id === this._config.device_id) || null;
@@ -170,6 +178,8 @@ class HaPcBridgeCard extends HTMLElement {
   _renderStatus() {
     const root = this.shadowRoot?.getElementById("status");
     if (!root || !this._device) return;
+    this._shown = this._comp();
+    this._shownLang = this._hass.language;
     const t = this._t, on = this._online(), e = this._device.entities, h = (k) => this._has(k);
 
     const user = this._val("logged_user");

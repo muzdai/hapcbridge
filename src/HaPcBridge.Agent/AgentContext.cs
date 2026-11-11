@@ -25,6 +25,8 @@ internal sealed class AgentContext : ApplicationContext
     string? _pendingType;
     SettingsForm? _settings;
     readonly EventWaitHandle _openSettingsSignal;
+    readonly Native.WinEventProc _foregroundProc; // kept in a field so the GC doesn't collect the callback
+    readonly IntPtr _foregroundHook;
     bool _locked;
     string? _lastSent;
     DateTime _lastSentAt;
@@ -65,6 +67,11 @@ internal sealed class AgentContext : ApplicationContext
 
         SystemEvents.SessionSwitch += OnSessionSwitch;
 
+        // Window switches arrive as events (instant); the timer only catches title changes and keeps idle time fresh.
+        _foregroundProc = (_, _, _, _, _, _, _) => SendStatus();
+        _foregroundHook = Native.SetWinEventHook(Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_FOREGROUND, IntPtr.Zero,
+            _foregroundProc, 0, 0, Native.WINEVENT_OUTOFCONTEXT | Native.WINEVENT_SKIPOWNPROCESS);
+
         _timer = new System.Windows.Forms.Timer { Interval = 2000 };
         _timer.Tick += (_, _) => SendStatus();
         _timer.Start();
@@ -82,6 +89,7 @@ internal sealed class AgentContext : ApplicationContext
             {
                 using var pipe = new NamedPipeClientStream(".", Ipc.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
                 await pipe.ConnectAsync(5000, ct);
+                if (!IsRealService(pipe)) { await Task.Delay(10000, ct); continue; }
                 var reader = new StreamReader(pipe, new UTF8Encoding(false));
                 var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
 
@@ -156,6 +164,19 @@ internal sealed class AgentContext : ApplicationContext
         _settings.FormClosed += (_, _) => _settings = null;
         _settings.Show();
         _settings.Activate();
+    }
+
+    /// <summary>
+    /// The real service runs in session 0, where no user program can run. Refuse anything else,
+    /// so a program that grabbed our pipe name can't receive the MQTT password from the settings window.
+    /// </summary>
+    static bool IsRealService(NamedPipeClientStream pipe)
+    {
+        if (!Native.GetNamedPipeServerProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out var pid)) return false;
+        if (!Native.ProcessIdToSessionId(pid, out var serverSession)) return false;
+        if (serverSession == 0) return true;
+        // Debugging only: the service started by hand in a console. Has to be asked for explicitly with --dev.
+        return Environment.GetCommandLineArgs().Contains("--dev");
     }
 
     void Write(IpcMessage m)
@@ -262,6 +283,7 @@ internal sealed class AgentContext : ApplicationContext
     protected override void ExitThreadCore()
     {
         _cts.Cancel();
+        if (_foregroundHook != IntPtr.Zero) Native.UnhookWinEvent(_foregroundHook);
         SystemEvents.SessionSwitch -= OnSessionSwitch;
         _timer.Stop();
         _tray.Visible = false;

@@ -151,3 +151,18 @@ async def test_object_only_option(hass: HomeAssistant, mqtt_mock) -> None:
     await hass.async_block_till_done()
     ids = [e.entity_id for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)]
     assert ids == ["switch.gaming_pc_computer"]
+
+
+async def test_attributes_not_recorded_and_removal(hass: HomeAssistant, mqtt_mock) -> None:
+    from homeassistant.const import MATCH_ALL
+    from custom_components.hapcbridge.switch import PcComputer
+
+    assert MATCH_ALL in PcComputer._unrecorded_attributes
+
+    entry = await _setup(hass, mqtt_mock)
+    mqtt_mock.async_publish.reset_mock()
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    # Removing the PC gives MQTT discovery back to the service and drops the cached snapshot.
+    mqtt_mock.async_publish.assert_any_call(f"{ROOT}/config/set", json.dumps({"haDiscovery": True}), 1, False)
+    assert "gaming_pc" not in hass.data.get(DOMAIN, {})

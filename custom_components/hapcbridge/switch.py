@@ -7,6 +7,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
+from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_platform
@@ -32,6 +33,9 @@ class PcComputer(PcEntity, SwitchEntity):
     _needs_online = False
     _attr_device_class = SwitchDeviceClass.SWITCH
     _attr_icon = "mdi:desktop-tower-monitor"
+    # ~30 attributes change every few seconds; recording each combination would bloat the database.
+    # History of on/off is still recorded, and every value has its own sensor entity for graphs.
+    _unrecorded_attributes = frozenset({MATCH_ALL})
 
     def __init__(self, hub) -> None:
         # Key stays "power" so the entity keeps its id/history from earlier versions.

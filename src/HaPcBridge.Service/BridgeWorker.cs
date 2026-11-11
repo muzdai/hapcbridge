@@ -26,6 +26,10 @@ internal sealed class BridgeWorker : BackgroundService
     FileSystemWatcher? _watcher;
     volatile bool _reloadRequested;
     volatile bool _suspending;
+    volatile bool _forceReconnect;
+    readonly SemaphoreSlim _wake = new(0, 1);
+    HardwareReading? _lastHw;
+    string? _lastSensorError;
     readonly HashSet<string> _publishedConfigTopics = new();
     string _lastStatusText = "";
 
@@ -45,6 +49,35 @@ internal sealed class BridgeWorker : BackgroundService
         _agent = new AgentHost(log);
         _agent.AgentConnected += PushAgentConfig;
         _agent.Request = HandleAgentRequest;
+        _agent.StatusChanged += Wake;        // window / lock changed → publish now, not at the next tick
+
+        HostEvents.SessionChanged += Wake;   // logon, logoff, RDP
+        HostEvents.Suspending += OnSuspending;
+        HostEvents.Resumed += OnResumed;
+    }
+
+    /// <summary>Interrupts the wait between updates: settings changed, something happened, or we resumed.</summary>
+    void Wake()
+    {
+        try { if (_wake.CurrentCount == 0) _wake.Release(); }
+        catch (SemaphoreFullException) { /* already signalled */ }
+        catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>Windows is going to sleep (any reason): tell HA now instead of after the keep-alive timeout.</summary>
+    void OnSuspending()
+    {
+        _suspending = true;
+        _log.LogInformation("System is suspending");
+        try { GoOfflineAsync().Wait(TimeSpan.FromSeconds(2)); } catch { }
+    }
+
+    void OnResumed()
+    {
+        if (!_suspending && !_forceReconnect) _log.LogInformation("System resumed");
+        _suspending = false;
+        _forceReconnect = true; // the old TCP connection is dead even if the client still thinks it's open
+        Wake();
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -55,30 +88,60 @@ internal sealed class BridgeWorker : BackgroundService
         _ = Task.Run(() => _agent.RunAsync(ct), ct);
 
         var backoff = TimeSpan.FromSeconds(2);
+        var nextFull = DateTime.MinValue; // when the hardware sensors are read again
+        var woken = false;                // the last wait ended early because of an event
         while (!ct.IsCancellationRequested)
         {
+            TimeSpan wait;
             try
             {
-                if (_reloadRequested) await ReloadConfigAsync(ct);
+                if (_reloadRequested) { await ReloadConfigAsync(ct); nextFull = DateTime.MinValue; }
+
+                if (_forceReconnect)
+                {
+                    _forceReconnect = false;
+                    await DropConnectionAsync();
+                }
 
                 if (!_mqtt.IsConnected && !_suspending)
                 {
                     await ConnectAsync(ct);
                     backoff = TimeSpan.FromSeconds(2);
+                    nextFull = DateTime.MinValue;
                 }
 
-                if (_mqtt.IsConnected) await PublishStateAsync(ct);
-
-                await Task.Delay(TimeSpan.FromSeconds(_cfg.UpdateIntervalSeconds), ct);
+                if (_mqtt.IsConnected)
+                {
+                    // Woken early by an event → cheap publish with the cached hardware reading.
+                    // (A wait that simply timed out is always a full update, even if the timer fired a few ms early.)
+                    var full = !woken || DateTime.UtcNow >= nextFull;
+                    await PublishStateAsync(full, ct);
+                    if (full) nextFull = DateTime.UtcNow.AddSeconds(_cfg.UpdateIntervalSeconds);
+                    wait = nextFull - DateTime.UtcNow;
+                    if (wait < TimeSpan.FromMilliseconds(200)) wait = TimeSpan.FromMilliseconds(200);
+                }
+                else wait = TimeSpan.FromSeconds(2);
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
-                _log.LogWarning("MQTT {Host}:{Port}: {Msg} — retry in {Sec}s", _cfg.Mqtt.Host, _cfg.Mqtt.Port, ex.Message, backoff.TotalSeconds);
-                UpdateAgentStatus($"Нет связи с брокером {_cfg.Mqtt.Host}");
-                try { await Task.Delay(backoff, ct); } catch { break; }
+                if (!_mqtt.IsConnected || ex is MQTTnet.Exceptions.MqttCommunicationException)
+                {
+                    _log.LogWarning("MQTT {Host}:{Port}: {Msg} - retry in {Sec}s", _cfg.Mqtt.Host, _cfg.Mqtt.Port, ex.Message, backoff.TotalSeconds);
+                    UpdateAgentStatus($"Нет связи с брокером {_cfg.Mqtt.Host}");
+                }
+                else _log.LogError(ex, "Update failed (not a broker problem) - retry in {Sec}s", backoff.TotalSeconds);
+                wait = backoff;
                 backoff = TimeSpan.FromSeconds(Math.Min(backoff.TotalSeconds * 2, 60));
             }
+
+            try
+            {
+                // Returns early when Wake() is called; a short pause then coalesces bursts (alt-tab, editors saving twice).
+                woken = await _wake.WaitAsync(wait, ct);
+                if (woken) await Task.Delay(150, ct);
+            }
+            catch (OperationCanceledException) { break; }
         }
     }
 
@@ -87,6 +150,9 @@ internal sealed class BridgeWorker : BackgroundService
         _log.LogInformation("Stopping");
         await GoOfflineAsync();
         await base.StopAsync(ct);
+        HostEvents.SessionChanged -= Wake;
+        HostEvents.Suspending -= OnSuspending;
+        HostEvents.Resumed -= OnResumed;
         _hw?.Dispose();
         _watcher?.Dispose();
     }
@@ -144,6 +210,18 @@ internal sealed class BridgeWorker : BackgroundService
         catch (Exception ex) { _log.LogDebug("Offline publish failed: {Msg}", ex.Message); }
     }
 
+    /// <summary>Closes a connection that is probably dead (after resume) without waiting on the broker.</summary>
+    async Task DropConnectionAsync()
+    {
+        if (!_mqtt.IsConnected) return;
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await _mqtt.DisconnectAsync(new MqttClientDisconnectOptionsBuilder().Build(), cts.Token);
+        }
+        catch { /* dead socket — the client is disconnected either way */ }
+    }
+
     Task PublishAsync(string topic, string payload, bool retain, CancellationToken ct)
     {
         var msg = new MqttApplicationMessageBuilder()
@@ -185,7 +263,9 @@ internal sealed class BridgeWorker : BackgroundService
 
     async Task PublishInfoAsync(CancellationToken ct)
     {
-        var (mac, ip) = SystemInfo.PrimaryNic();
+        (string? mac, string? ip) = (null, null);
+        try { (mac, ip) = SystemInfo.PrimaryNic(); }
+        catch (Exception ex) { _log.LogWarning("Network adapters: {Msg}", ex.Message); }
         if (!string.IsNullOrWhiteSpace(_cfg.Wol.Mac)) mac = _cfg.Wol.Mac.Trim().ToUpperInvariant().Replace('-', ':');
         var info = new JsonObject
         {
@@ -202,19 +282,36 @@ internal sealed class BridgeWorker : BackgroundService
     Task PublishConfigAsync(CancellationToken ct) =>
         PublishAsync(_disc.T.ConfigState, RemoteConfig.Public(_cfg).ToJsonString(), retain: true, ct);
 
-    async Task PublishStateAsync(CancellationToken ct)
+    async Task PublishStateAsync(bool refreshHardware, CancellationToken ct)
     {
-        var state = BuildState();
+        var state = BuildState(refreshHardware);
         await PublishAsync(_disc.T.State, state.ToJsonString(), retain: false, ct);
     }
 
     // ---------------- State ----------------
 
-    JsonObject BuildState()
+    /// <summary>Reads the hardware sensors; a failing sensor library must not look like an MQTT problem.</summary>
+    HardwareReading ReadHardware()
+    {
+        try
+        {
+            var r = _hw?.Read() ?? new HardwareReading();
+            if (_lastSensorError != null) { _log.LogInformation("Hardware sensors are readable again"); _lastSensorError = null; }
+            return r;
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message != _lastSensorError) { _lastSensorError = ex.Message; _log.LogWarning("Hardware sensors: {Msg}", ex.Message); }
+            return new HardwareReading();
+        }
+    }
+
+    JsonObject BuildState(bool refreshHardware = true)
     {
         var s = _cfg.Sensors;
         var o = new JsonObject();
-        var hw = _hw?.Read() ?? new HardwareReading();
+        if (refreshHardware || _lastHw == null) _lastHw = ReadHardware();
+        var hw = _lastHw;
         var gpu = PrimaryGpu(hw.Gpus);
 
         if (s.CpuLoad) o["cpu_load"] = R(hw.CpuLoad);
@@ -241,7 +338,7 @@ internal sealed class BridgeWorker : BackgroundService
 
         if (s.LoggedUser || s.LastLogin)
         {
-            var session = SystemInfo.ConsoleSession();
+            var session = SystemInfo.UserSession();
             if (s.LoggedUser) o["logged_user"] = session?.User ?? "none";
             if (s.LastLogin) o["last_login"] = session?.LogonTime?.ToString("o");
         }
@@ -306,12 +403,19 @@ internal sealed class BridgeWorker : BackgroundService
         {
             if (payload == "online")
             {
-                _log.LogInformation("Home Assistant restarted — re-sending discovery");
+                _log.LogInformation("Home Assistant restarted - re-sending discovery");
                 await Task.Delay(Random.Shared.Next(500, 3000));
                 await PublishDiscoveryAsync(CancellationToken.None);
                 await PublishInfoAsync(CancellationToken.None);
                 await PublishAsync(_disc.T.Availability, "online", true, CancellationToken.None);
             }
+            return;
+        }
+
+        // A retained command would run again on every reconnect (e.g. shut the PC down at each boot).
+        if (e.ApplicationMessage.Retain)
+        {
+            _log.LogWarning("Ignored retained message on {Topic}; clear it on the broker", topic);
             return;
         }
 
@@ -375,12 +479,12 @@ internal sealed class BridgeWorker : BackgroundService
         {
             await Task.Delay(500); // let the MQTT ack go out
             await GoOfflineAsync();
-            await Task.Run(() => PowerActions.Suspend(_log, hibernate));
+            await Task.Run(() => PowerActions.Suspend(_log, hibernate)); // returns after resume
         }
         finally
         {
             await Task.Delay(3000); // network usually needs a moment after resume
-            _suspending = false;
+            OnResumed();
         }
     }
 
@@ -451,10 +555,10 @@ internal sealed class BridgeWorker : BackgroundService
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
             EnableRaisingEvents = true,
         };
-        FileSystemEventHandler h = (_, _) => _reloadRequested = true;
+        FileSystemEventHandler h = (_, _) => { _reloadRequested = true; Wake(); };
         _watcher.Changed += h;
         _watcher.Created += h;
-        _watcher.Renamed += (_, _) => _reloadRequested = true;
+        _watcher.Renamed += (_, _) => { _reloadRequested = true; Wake(); };
     }
 
     async Task ReloadConfigAsync(CancellationToken ct)
@@ -462,11 +566,11 @@ internal sealed class BridgeWorker : BackgroundService
         _reloadRequested = false;
         await Task.Delay(500, ct); // editors write in several steps
         var next = ConfigStore.LoadAndProtect(out var err);
-        if (err != null) { _log.LogError("{Err} — keeping the running config", err); return; }
+        if (err != null) { _log.LogError("{Err} - keeping the running config", err); return; }
 
         var oldJson = JsonSerializer.Serialize(_cfg, ConfigStore.JsonOptions);
         if (oldJson == JsonSerializer.Serialize(next, ConfigStore.JsonOptions)) return;
-        _log.LogInformation("Config changed — applying");
+        _log.LogInformation("Config changed - applying");
 
         bool reconnect = JsonSerializer.Serialize(_cfg.Mqtt) != JsonSerializer.Serialize(next.Mqtt)
                          || _cfg.DeviceId != next.DeviceId || _cfg.BaseTopic != next.BaseTopic
@@ -489,7 +593,7 @@ internal sealed class BridgeWorker : BackgroundService
             await PublishDiscoveryAsync(ct);
             await PublishInfoAsync(ct);
             await PublishConfigAsync(ct);
-            await PublishStateAsync(ct);
+            // the main loop publishes the state right after this
         }
     }
 

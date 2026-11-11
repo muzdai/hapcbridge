@@ -30,6 +30,8 @@ switch (args.FirstOrDefault()?.ToLowerInvariant())
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddWindowsService(o => o.ServiceName = ServiceName);
+if (WindowsServiceHelpers.IsWindowsService())
+    builder.Services.AddSingleton<IHostLifetime, BridgeServiceLifetime>(); // sleep/resume and session events
 builder.Services.AddHostedService<BridgeWorker>();
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole(o => { o.SingleLine = true; o.TimestampFormat = "HH:mm:ss "; });

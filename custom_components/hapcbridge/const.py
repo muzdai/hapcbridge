@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "hapcbridge"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 CONF_DEVICE_ID = "device_id"
 CONF_BASE_TOPIC = "base_topic"

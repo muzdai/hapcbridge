@@ -11,5 +11,5 @@
   "issue_tracker": "https://github.com/muzdai/hapcbridge/issues",
   "mqtt": ["hapcbridge/+/info"],
   "requirements": [],
-  "version": "0.3.0"
+  "version": "0.3.1"
 }

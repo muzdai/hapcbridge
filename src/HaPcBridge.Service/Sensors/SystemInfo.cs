@@ -21,20 +21,46 @@ internal static class SystemInfo
 
     public sealed record Session(uint Id, string? User, DateTimeOffset? LogonTime);
 
-    /// <summary>The user sitting at the physical console (not RDP), or null when nobody is logged in.</summary>
-    public static Session? ConsoleSession()
+    /// <summary>
+    /// The interactive user session: the physical console if someone is logged on there,
+    /// otherwise an active Remote Desktop session, otherwise any logged-on (disconnected) one.
+    /// Null when nobody is logged in.
+    /// </summary>
+    public static Session? UserSession()
     {
-        var id = Win32.WTSGetActiveConsoleSessionId();
-        if (id == Win32.INVALID_SESSION || id == 0) return null;
+        var console = Win32.WTSGetActiveConsoleSessionId();
+        var sessions = new List<(uint Id, Win32.WTS_CONNECTSTATE_CLASS State)>();
 
-        var user = Win32.QueryString(id, Win32.WTS_INFO_CLASS.WTSUserName);
-        if (string.IsNullOrEmpty(user)) return new Session(id, null, null);
+        if (Win32.WTSEnumerateSessionsW(Win32.WTS_CURRENT_SERVER_HANDLE, 0, 1, out var buffer, out var count))
+        {
+            try
+            {
+                var size = System.Runtime.InteropServices.Marshal.SizeOf<Win32.WTS_SESSION_INFO>();
+                for (var n = 0; n < count; n++)
+                {
+                    var si = System.Runtime.InteropServices.Marshal.PtrToStructure<Win32.WTS_SESSION_INFO>(buffer + n * size);
+                    if (si.SessionId != 0) sessions.Add((si.SessionId, si.State));
+                }
+            }
+            finally { Win32.WTSFreeMemory(buffer); }
+        }
+        else if (console != Win32.INVALID_SESSION && console != 0)
+            sessions.Add((console, Win32.WTS_CONNECTSTATE_CLASS.Active));
 
+        var best = sessions
+            .Select(x => (x.Id, x.State, User: Win32.QueryString(x.Id, Win32.WTS_INFO_CLASS.WTSUserName)))
+            .Where(x => !string.IsNullOrEmpty(x.User))
+            .OrderBy(x => x.Id == console ? 0 : x.State == Win32.WTS_CONNECTSTATE_CLASS.Active ? 1 : 2)
+            .Select(x => (uint?)x.Id)
+            .FirstOrDefault();
+        if (best is not { } id) return null;
+
+        var user = Win32.QueryString(id, Win32.WTS_INFO_CLASS.WTSUserName)!;
         var domain = Win32.QueryString(id, Win32.WTS_INFO_CLASS.WTSDomainName);
         var info = Win32.QuerySessionInfo(id);
         DateTimeOffset? logon = info is { LogonTime: > 0 } i ? DateTimeOffset.FromFileTime(i.LogonTime).ToUniversalTime() : null;
 
-        // Show "DOMAIN\user" only for real domains; a local account shows just the name.
+        // Show "DOMAIN\\user" only for real domains; a local account shows just the name.
         var display = !string.IsNullOrEmpty(domain) && !domain.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase)
             ? $"{domain}\\{user}" : user;
         return new Session(id, display, logon);

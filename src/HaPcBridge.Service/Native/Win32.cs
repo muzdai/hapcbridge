@@ -51,6 +51,20 @@ internal static class Win32
     [DllImport("wtsapi32.dll")]
     public static extern void WTSFreeMemory(IntPtr memory);
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WTS_SESSION_INFO
+    {
+        public uint SessionId;
+        public IntPtr WinStationName;
+        public WTS_CONNECTSTATE_CLASS State;
+    }
+
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    public static extern bool WTSEnumerateSessionsW(IntPtr hServer, uint reserved, uint version, out IntPtr sessionInfo, out uint count);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool ProcessIdToSessionId(uint processId, out uint sessionId);
+
     [DllImport("wtsapi32.dll", SetLastError = true)]
     public static extern bool WTSQueryUserToken(uint sessionId, out IntPtr token);
 

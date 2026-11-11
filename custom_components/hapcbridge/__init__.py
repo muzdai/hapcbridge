@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components import websocket_api
+from homeassistant.components import mqtt, websocket_api
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -18,7 +19,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CARD_URL, DOMAIN, VERSION
+from .const import CARD_URL, CONF_BASE_TOPIC, CONF_DEVICE_ID, DEFAULT_BASE_TOPIC, DOMAIN, VERSION
 from .hub import PcHub
 
 _LOGGER = logging.getLogger(__name__)
@@ -84,6 +85,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: PcConfigEntry) -> bool:
     if ok:
         await entry.runtime_data.async_stop()
     return ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """The PC was deleted from HA: forget its cached state and hand discovery back to the service."""
+    device_id = entry.data.get(CONF_DEVICE_ID)
+    hass.data.get(DOMAIN, {}).pop(device_id, None)
+    topic = f"{entry.data.get(CONF_BASE_TOPIC, DEFAULT_BASE_TOPIC)}/{device_id}/config/set"
+    try:
+        await mqtt.async_publish(hass, topic, json.dumps({"haDiscovery": True}), qos=1, retain=False)
+    except Exception:  # noqa: BLE001 - MQTT may be gone too; nothing more to do
+        _LOGGER.debug("Could not re-enable MQTT discovery on %s", device_id)
 
 
 def _hub(hass: HomeAssistant, entry_id: str) -> PcHub:

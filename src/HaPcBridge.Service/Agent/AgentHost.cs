@@ -34,6 +34,10 @@ internal sealed class AgentHost
     /// <summary>Handles request messages from the agent (settings window); the result is sent back.</summary>
     public Func<IpcMessage, IpcMessage?>? Request { get; set; }
 
+    /// <summary>Foreground window or lock state changed, or the agent came/went — publish right away.</summary>
+    public event Action? StatusChanged;
+    string? _statusKey;
+
     public AgentHost(ILogger log) => _log = log;
 
     public async Task RunAsync(CancellationToken ct)
@@ -52,8 +56,7 @@ internal sealed class AgentHost
                 if (!IsTrustedClient(pipe, out var pid))
                 {
                     _log.LogWarning("Rejected pipe client pid {Pid}: not our agent executable", pid);
-                    pipe.Dispose();
-                    continue;
+                    continue; // the finally block disposes the pipe
                 }
                 await HandleClientAsync(pipe, ct);
             }
@@ -61,9 +64,12 @@ internal sealed class AgentHost
             catch (Exception ex) { _log.LogWarning("Agent connection ended: {Msg}", ex.Message); }
             finally
             {
-                lock (_lock) { _writer = null; _connectedSession = Win32.INVALID_SESSION; }
+                bool had;
+                lock (_lock) { had = _writer != null; _writer = null; _connectedSession = Win32.INVALID_SESSION; }
                 LastStatus = null;
+                _statusKey = null;
                 pipe.Dispose();
+                if (had) StatusChanged?.Invoke();
             }
         }
     }
@@ -75,8 +81,9 @@ internal sealed class AgentHost
             PipeAccessRights.ReadWrite, AccessControlType.Allow));
         sec.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
             PipeAccessRights.FullControl, AccessControlType.Allow));
+        // FirstPipeInstance: fail instead of joining a pipe some other process created under our name.
         return NamedPipeServerStreamAcl.Create(Ipc.PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous, 4096, 4096, sec);
+            PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance, 4096, 4096, sec);
     }
 
     /// <summary>Only our own HaPcBridge.Agent.exe (same folder as the service) may talk to us.</summary>
@@ -86,6 +93,8 @@ internal sealed class AgentHost
         if (!Win32.GetNamedPipeClientProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out pid)) return false;
         try
         {
+            // An agent always lives in a user session; nothing in session 0 should be talking to us.
+            if (!Win32.ProcessIdToSessionId(pid, out var session) || session == 0) return false;
             using var p = Process.GetProcessById((int)pid);
             var path = p.MainModule?.FileName;
             return path != null && string.Equals(Path.GetFullPath(path), Path.GetFullPath(AgentExe), StringComparison.OrdinalIgnoreCase);
@@ -115,6 +124,8 @@ internal sealed class AgentHost
                 case "status":
                     LastStatus = msg;
                     LastStatusAt = DateTime.UtcNow;
+                    var key = $"{msg.ActiveWindow}\n{msg.ActiveProcess}\n{msg.Locked}";
+                    if (key != _statusKey) { _statusKey = key; StatusChanged?.Invoke(); }
                     break;
                 default:
                     IpcMessage? reply = null;
@@ -137,22 +148,22 @@ internal sealed class AgentHost
         }
     }
 
-    /// <summary>Starts the agent in the console session whenever a user is logged on and no agent is connected.</summary>
+    /// <summary>Starts the agent in the user's session (console or Remote Desktop) whenever someone is logged on and no agent is connected.</summary>
     async Task SupervisorLoop(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                var session = Win32.WTSGetActiveConsoleSessionId();
-                var hasUser = session != Win32.INVALID_SESSION && session != 0
-                              && !string.IsNullOrEmpty(Win32.QueryString(session, Win32.WTS_INFO_CLASS.WTSUserName));
+                var user = Sensors.SystemInfo.UserSession();
+                var hasUser = user != null;
+                var session = user?.Id ?? Win32.INVALID_SESSION;
 
                 bool wrongSession;
                 lock (_lock) wrongSession = _writer != null && _connectedSession != session;
                 if (wrongSession)
                 {
-                    // Fast user switching: tell the old agent to quit; a new one is launched below.
+                    // Fast user switching or console ↔ RDP: tell the old agent to quit; a new one is launched below.
                     Send(IpcMessage.Cmd(AgentCommands.Exit));
                 }
 
@@ -171,7 +182,7 @@ internal sealed class AgentHost
     void Launch(uint session)
     {
         if (!File.Exists(AgentExe)) { _log.LogWarning("Agent not found at {Path}", AgentExe); return; }
-        if (!IsLocalSystem()) { _log.LogDebug("Not running as LocalSystem (console mode?) — start HaPcBridge.Agent.exe yourself"); return; }
+        if (!IsLocalSystem()) { _log.LogDebug("Not running as LocalSystem (console mode?) - start HaPcBridge.Agent.exe yourself"); return; }
 
         if (!Win32.WTSQueryUserToken(session, out var token))
         {

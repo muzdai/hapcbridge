@@ -27,9 +27,8 @@ internal static class PowerActions
 
     public static void Logoff(ILogger log)
     {
-        var s = Win32.WTSGetActiveConsoleSessionId();
-        if (s == Win32.INVALID_SESSION || s == 0) return;
-        if (!Win32.WTSLogoffSession(Win32.WTS_CURRENT_SERVER_HANDLE, s, false))
+        if (Sensors.SystemInfo.UserSession() is not { } session) return;
+        if (!Win32.WTSLogoffSession(Win32.WTS_CURRENT_SERVER_HANDLE, session.Id, false))
             log.LogWarning("WTSLogoffSession failed: {Err}", System.Runtime.InteropServices.Marshal.GetLastWin32Error());
     }
 
