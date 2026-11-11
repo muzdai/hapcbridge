@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Drawing.Drawing2D;
 using System.IO.Pipes;
 using System.Text;
 using HaPcBridge.Common;
@@ -17,7 +16,7 @@ internal sealed class AgentContext : ApplicationContext
 
     readonly SynchronizationContext _ui;
     readonly NotifyIcon _tray;
-    readonly ToolStripMenuItem _statusItem;
+    readonly ToolStripLabel _statusItem;
     readonly System.Windows.Forms.Timer _timer;
     readonly CancellationTokenSource _cts = new();
     readonly object _writeLock = new();
@@ -34,19 +33,23 @@ internal sealed class AgentContext : ApplicationContext
     {
         _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
-        _statusItem = new ToolStripMenuItem("Нет связи со службой") { Enabled = false };
-        var menu = new ContextMenuStrip();
-        menu.Items.Add(_statusItem);
-        menu.Items.Add(new ToolStripSeparator());
+        var title = new ToolStripLabel("HA PC Bridge") { Image = AppIcon.Bitmap(16), Font = new Font("Segoe UI", 9f, FontStyle.Bold), Padding = new Padding(0, 4, 0, 2) };
+        // A label, not a disabled menu item: Windows greys out the images of disabled items.
+        _statusItem = new ToolStripLabel("Нет связи со службой") { Image = AppIcon.Dot(AppIcon.Off), ForeColor = SystemColors.GrayText, Padding = new Padding(0, 2, 0, 2), ImageScaling = ToolStripItemImageScaling.None };
         var settingsItem = new ToolStripMenuItem("Настройки…", null, async (_, _) => await OpenSettingsAsync());
         settingsItem.Font = new Font(settingsItem.Font, FontStyle.Bold);
-        menu.Items.Add(settingsItem);
+        var about = new ToolStripMenuItem("О программе", null, (_, _) => MessageBox.Show(
+            $"HA PC Bridge {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)}\n\n" +
+            "Состояние компьютера в Home Assistant через MQTT.\nhttps://github.com/muzdai/hapcbridge",
+            "О программе", MessageBoxButtons.OK, MessageBoxIcon.Information));
+        var menu = new ContextMenuStrip { ShowImageMargin = true, Font = new Font("Segoe UI", 9f) };
+        menu.Items.AddRange([title, new ToolStripSeparator(), _statusItem, new ToolStripSeparator(), settingsItem, about]);
 
         // config.json is readable only by admins/SYSTEM (it holds the MQTT password);
         // the service pushes the tray setting over the pipe right after we connect.
         _tray = new NotifyIcon
         {
-            Icon = MakeIcon(),
+            Icon = AppIcon.Icon(),
             Text = "HA PC Bridge",
             ContextMenuStrip = menu,
             Visible = false,
@@ -104,7 +107,7 @@ internal sealed class AgentContext : ApplicationContext
             finally
             {
                 lock (_writeLock) _writer = null;
-                _ui.Post(_ => _statusItem.Text = "Нет связи со службой", null);
+                _ui.Post(_ => SetStatus("Нет связи со службой"), null);
             }
 
             try { await Task.Delay(3000, ct); } catch { break; }
@@ -171,11 +174,7 @@ internal sealed class AgentContext : ApplicationContext
         {
             case "config":
                 if (m.TrayIcon is bool show) _tray.Visible = show;
-                if (!string.IsNullOrEmpty(m.StatusText))
-                {
-                    _statusItem.Text = m.StatusText;
-                    _tray.Text = Truncate("HA PC Bridge — " + m.StatusText, 127);
-                }
+                if (!string.IsNullOrEmpty(m.StatusText)) SetStatus(m.StatusText);
                 break;
 
             case "command":
@@ -249,21 +248,13 @@ internal sealed class AgentContext : ApplicationContext
 
     // ---------------- tray ----------------
 
-    static Icon MakeIcon()
+    void SetStatus(string text)
     {
-        using var bmp = new Bitmap(32, 32);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-            using var body = new SolidBrush(Color.FromArgb(3, 169, 244)); // HA blue
-            g.FillRectangle(body, 3, 4, 26, 18);
-            using var screen = new SolidBrush(Color.FromArgb(225, 245, 254));
-            g.FillRectangle(screen, 6, 7, 20, 12);
-            g.FillRectangle(body, 13, 22, 6, 4);
-            g.FillRectangle(body, 8, 26, 16, 3);
-        }
-        return Icon.FromHandle(bmp.GetHicon());
+        _statusItem.Text = text;
+        var color = text.StartsWith("Подключено", StringComparison.Ordinal) ? AppIcon.Ok
+                  : text.StartsWith("Нет связи со службой", StringComparison.Ordinal) ? AppIcon.Off : AppIcon.Warn;
+        _statusItem.Image = AppIcon.Dot(color);
+        _tray.Text = Truncate("HA PC Bridge — " + text, 127);
     }
 
     static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
