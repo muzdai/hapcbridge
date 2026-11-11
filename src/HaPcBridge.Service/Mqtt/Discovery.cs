@@ -172,4 +172,6 @@ internal sealed class Topics
     public string PowerSet => $"{Root}/power/set";
     public string ConfigSet => $"{Root}/config/set";
     public string ConfigState => $"{Root}/config";
+    public string Notify => $"{Root}/notify";
+    public string NotifyEvent => $"{Root}/notify/event";
 }

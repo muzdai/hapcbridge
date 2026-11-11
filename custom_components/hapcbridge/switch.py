@@ -10,7 +10,7 @@ from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import entity_platform
+from homeassistant.helpers import config_validation as cv, entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import PcConfigEntry
@@ -24,6 +24,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: PcConfigEntry, add: AddE
     platform = entity_platform.async_get_current_platform()
     platform.async_register_entity_service(
         "command", {vol.Required("command"): vol.In(list(COMMAND_TOGGLE))}, "async_send_command"
+    )
+    platform.async_register_entity_service(
+        "notify",
+        {
+            vol.Required("message"): cv.string,
+            vol.Optional("title"): cv.string,
+            vol.Optional("tag"): cv.string,
+            vol.Optional("actions"): vol.All(
+                cv.ensure_list,
+                vol.Length(max=5),
+                [vol.Any(cv.string, vol.Schema({vol.Required("id"): cv.string, vol.Required("title"): cv.string}))],
+            ),
+            vol.Optional("duration"): vol.In(["short", "long"]),
+            vol.Optional("silent"): cv.boolean,
+        },
+        "async_notify",
     )
 
 
@@ -67,6 +83,13 @@ class PcComputer(PcEntity, SwitchEntity):
             raise ServiceValidationError("Power control is disabled in the PC settings")
         if self.hub.online:
             await self.hub.async_power_off()
+
+    async def async_notify(self, message: str, title: str | None = None, **extra: Any) -> None:
+        if not self.hub.online:
+            raise HomeAssistantError(f"{self.hub.name} is offline")
+        if not self.hub.notifications_enabled:
+            raise ServiceValidationError("Notifications are disabled in the PC settings")
+        await self.hub.async_notify(message, title, **extra)
 
     async def async_send_command(self, command: str) -> None:
         if not self.hub.online:

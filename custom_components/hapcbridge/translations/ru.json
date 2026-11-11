@@ -115,6 +115,11 @@
       "close_active_window": {
         "name": "Закрыть активное окно"
       }
+    },
+    "notify": {
+      "notification": {
+        "name": "Уведомление"
+      }
     }
   },
   "services": {
@@ -138,6 +143,36 @@
       "fields": {
         "command": {
           "name": "Команда",
+          "description": ""
+        }
+      }
+    },
+    "notify": {
+      "name": "Уведомление на компьютер",
+      "description": "Показывает уведомление Windows на компьютере. Нажатие и кнопки приходят событием hapcbridge_notification.",
+      "fields": {
+        "message": {
+          "name": "Текст",
+          "description": ""
+        },
+        "title": {
+          "name": "Заголовок",
+          "description": ""
+        },
+        "actions": {
+          "name": "Кнопки",
+          "description": "До пяти кнопок: список {id, title} или просто названий."
+        },
+        "tag": {
+          "name": "Метка",
+          "description": "Возвращается в событии; новое уведомление с той же меткой заменяет старое."
+        },
+        "duration": {
+          "name": "Длительность",
+          "description": "short — около 7 с, long — около 25 с."
+        },
+        "silent": {
+          "name": "Без звука",
           "description": ""
         }
       }

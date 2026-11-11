@@ -115,6 +115,11 @@
       "close_active_window": {
         "name": "Close active window"
       }
+    },
+    "notify": {
+      "notification": {
+        "name": "Notification"
+      }
     }
   },
   "services": {
@@ -138,6 +143,36 @@
       "fields": {
         "command": {
           "name": "Command",
+          "description": ""
+        }
+      }
+    },
+    "notify": {
+      "name": "PC notification",
+      "description": "Shows a Windows notification on the PC. Clicks and buttons come back as the hapcbridge_notification event.",
+      "fields": {
+        "message": {
+          "name": "Message",
+          "description": ""
+        },
+        "title": {
+          "name": "Title",
+          "description": ""
+        },
+        "actions": {
+          "name": "Buttons",
+          "description": "Up to five buttons: a list of {id, title} or plain titles."
+        },
+        "tag": {
+          "name": "Tag",
+          "description": "Returned in the event; a new notification with the same tag replaces the old one."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "short is about 7 s, long about 25 s."
+        },
+        "silent": {
+          "name": "Silent",
           "description": ""
         }
       }

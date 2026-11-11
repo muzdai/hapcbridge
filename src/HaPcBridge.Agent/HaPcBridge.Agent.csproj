@@ -6,6 +6,7 @@
     <RootNamespace>HaPcBridge.Agent</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
+  <Import Project="..\ServicePackages.props" />
   <ItemGroup>
     <ProjectReference Include="..\HaPcBridge.Common\HaPcBridge.Common.csproj" />
   </ItemGroup>

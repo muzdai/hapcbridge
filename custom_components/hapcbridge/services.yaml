@@ -33,3 +33,37 @@ command:
             - logoff
             - monitor_off
             - close_active_window
+
+notify:
+  target:
+    entity:
+      integration: hapcbridge
+      domain: switch
+  fields:
+    message:
+      required: true
+      example: "Стирка закончилась"
+      selector:
+        text:
+          multiline: true
+    title:
+      example: "Home Assistant"
+      selector:
+        text:
+    actions:
+      example: '[{"id": "open", "title": "Открыть"}, {"id": "ignore", "title": "Игнорировать"}]'
+      selector:
+        object:
+    tag:
+      example: doorbell
+      selector:
+        text:
+    duration:
+      selector:
+        select:
+          options:
+            - short
+            - long
+    silent:
+      selector:
+        boolean:

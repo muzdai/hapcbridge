@@ -25,7 +25,7 @@ public static class Ipc
 
 public sealed class IpcMessage
 {
-    /// <summary>agent → service: "hello", "status", "get_config", "set_config". service → agent: "command", "config", "full_config", "saved".</summary>
+    /// <summary>agent → service: "hello", "status", "get_config", "set_config". service → agent: "command", "config", "full_config", "saved", "notify". agent → service also "notify_event".</summary>
     public string Type { get; set; } = "";
 
     // hello
@@ -52,6 +52,9 @@ public sealed class IpcMessage
     public bool? HasPassword { get; set; }
     public bool? Ok { get; set; }
     public string? Error { get; set; }
+
+    /// <summary>"notify" (service → agent): notification JSON. "notify_event" (agent → service): {tag, action}.</summary>
+    public string? Payload { get; set; }
 
     public static IpcMessage Cmd(string command) => new() { Type = "command", Command = command };
 }

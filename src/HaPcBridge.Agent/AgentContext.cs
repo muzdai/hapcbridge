@@ -27,6 +27,7 @@ internal sealed class AgentContext : ApplicationContext
     readonly EventWaitHandle _openSettingsSignal;
     readonly Native.WinEventProc _foregroundProc; // kept in a field so the GC doesn't collect the callback
     readonly IntPtr _foregroundHook;
+    readonly Notifier _notifier;
     bool _locked;
     string? _lastSent;
     DateTime _lastSentAt;
@@ -57,6 +58,8 @@ internal sealed class AgentContext : ApplicationContext
             Visible = false,
         };
         _tray.DoubleClick += async (_, _) => await OpenSettingsAsync();
+        _notifier = new Notifier(_tray, _ui, (tag, action) =>
+            Write(new IpcMessage { Type = "notify_event", Payload = Notifier.EventJson(tag, action) }));
 
         // "HaPcBridge.Agent.exe --settings" from a second process (Start menu shortcut, icon hidden) opens the window here.
         _openSettingsSignal = new EventWaitHandle(false, EventResetMode.AutoReset, Program.OpenSettingsEvent);
@@ -196,6 +199,10 @@ internal sealed class AgentContext : ApplicationContext
             case "config":
                 if (m.TrayIcon is bool show) _tray.Visible = show;
                 if (!string.IsNullOrEmpty(m.StatusText)) SetStatus(m.StatusText);
+                break;
+
+            case "notify":
+                if (Notification.FromJson(m.Payload ?? "") is { } n) _notifier.Show(n);
                 break;
 
             case "command":

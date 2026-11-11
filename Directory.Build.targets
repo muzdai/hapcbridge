@@ -1,0 +1,36 @@
+<Project>
+  <!--
+    A self-contained WinForms app also gets the whole WPF stack (about 45 MB) from the WindowsDesktop
+    runtime pack. Nothing here uses WPF, so it is left out of the output and of the dependency manifest.
+  -->
+  <Target Name="DropUnusedWpf" AfterTargets="ResolveRuntimePackAssets" Condition="'$(UseWindowsForms)' == 'true' and '$(UseWPF)' != 'true'">
+    <ItemGroup>
+      <_WpfOnly Include="@(RuntimePackAsset)" Condition="
+        $([System.String]::Copy('%(Filename)').StartsWith('PresentationFramework')) or
+        '%(Filename)' == 'PresentationCore' or '%(Filename)' == 'PresentationUI' or
+        '%(Filename)' == 'PresentationNative_cor3' or '%(Filename)' == 'ReachFramework' or
+        '%(Filename)' == 'wpfgfx_cor3' or '%(Filename)' == 'D3DCompiler_47_cor3' or
+        '%(Filename)' == 'PenImc_cor3' or '%(Filename)' == 'DirectWriteForwarder' or
+        '%(Filename)' == 'System.Windows.Controls.Ribbon' or '%(Filename)' == 'System.Windows.Presentation' or
+        '%(Filename)' == 'System.Printing' or '%(Filename)' == 'WindowsFormsIntegration' or
+        '%(Filename)' == 'System.Windows.Input.Manipulations'" />
+      <RuntimePackAsset Remove="@(_WpfOnly)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- The publish file list is computed separately from the manifest, so filter it the same way. -->
+  <Target Name="DropUnusedWpfFromPublish" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(UseWindowsForms)' == 'true' and '$(UseWPF)' != 'true'">
+    <ItemGroup>
+      <_WpfPublish Include="@(ResolvedFileToPublish)" Condition="
+        $([System.String]::Copy('%(Filename)').StartsWith('PresentationFramework')) or
+        '%(Filename)' == 'PresentationCore' or '%(Filename)' == 'PresentationUI' or
+        '%(Filename)' == 'PresentationNative_cor3' or '%(Filename)' == 'ReachFramework' or
+        '%(Filename)' == 'wpfgfx_cor3' or '%(Filename)' == 'D3DCompiler_47_cor3' or
+        '%(Filename)' == 'PenImc_cor3' or '%(Filename)' == 'DirectWriteForwarder' or
+        '%(Filename)' == 'System.Windows.Controls.Ribbon' or '%(Filename)' == 'System.Windows.Presentation' or
+        '%(Filename)' == 'System.Printing' or '%(Filename)' == 'WindowsFormsIntegration' or
+        '%(Filename)' == 'System.Windows.Input.Manipulations'" />
+      <ResolvedFileToPublish Remove="@(_WpfPublish)" />
+    </ItemGroup>
+  </Target>
+</Project>

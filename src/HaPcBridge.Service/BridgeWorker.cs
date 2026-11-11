@@ -188,6 +188,7 @@ internal sealed class BridgeWorker : BackgroundService
             .WithTopicFilter(_disc.T.Command, MqttQualityOfServiceLevel.AtLeastOnce)
             .WithTopicFilter(_disc.T.PowerSet, MqttQualityOfServiceLevel.AtLeastOnce)
             .WithTopicFilter(_disc.T.ConfigSet, MqttQualityOfServiceLevel.AtLeastOnce)
+            .WithTopicFilter(_disc.T.Notify, MqttQualityOfServiceLevel.AtLeastOnce)
             .WithTopicFilter($"{_cfg.DiscoveryPrefix}/status", MqttQualityOfServiceLevel.AtLeastOnce)
             .Build();
         await _mqtt.SubscribeAsync(sub, ct);
@@ -312,7 +313,7 @@ internal sealed class BridgeWorker : BackgroundService
         var o = new JsonObject();
         if (refreshHardware || _lastHw == null) _lastHw = ReadHardware();
         var hw = _lastHw;
-        var gpu = PrimaryGpu(hw.Gpus);
+        var gpu = Estimator.PrimaryGpu(hw.Gpus, _cfg.PrimaryGpu);
 
         if (s.CpuLoad) o["cpu_load"] = R(hw.CpuLoad);
         if (s.CpuTemp) o["cpu_temp"] = R(Temp(hw.CpuTemp));
@@ -331,7 +332,7 @@ internal sealed class BridgeWorker : BackgroundService
 
         if (s.TotalPower)
         {
-            var (watts, source) = TotalPower(hw);
+            var (watts, source) = Estimator.TotalPower(hw, _cfg.Power);
             o["total_power"] = R(watts);
             o["total_power_source"] = source;
         }
@@ -360,35 +361,7 @@ internal sealed class BridgeWorker : BackgroundService
         return DateTime.UtcNow - _agent.LastStatusAt > TimeSpan.FromSeconds(Math.Max(30, _cfg.UpdateIntervalSeconds * 3)) ? null : st;
     }
 
-    GpuReading? PrimaryGpu(List<GpuReading> gpus)
-    {
-        if (gpus.Count == 0) return null;
-        if (!string.IsNullOrWhiteSpace(_cfg.PrimaryGpu))
-        {
-            var match = gpus.FirstOrDefault(g => g.Name.Contains(_cfg.PrimaryGpu.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (match != null) return match;
-        }
-        return gpus.FirstOrDefault(g => g.Vendor == "nvidia")
-               ?? gpus.OrderByDescending(g => g.MemoryTotalGb ?? 0).ThenByDescending(g => g.Power ?? 0).First();
-    }
-
-    /// <summary>
-    /// Real wall power from a PSU with telemetry (Corsair HXi/RMi, NZXT …) when present;
-    /// otherwise (CPU package + discrete GPUs) / PSU efficiency + baseline for the rest of the system.
-    /// </summary>
-    (double? Watts, string Source) TotalPower(HardwareReading hw)
-    {
-        if (hw.PsuPower is > 0) return (hw.PsuPower, $"psu: {hw.PsuName}");
-
-        // An iGPU's power is already part of the CPU package, so only discrete cards are added.
-        var gpuW = hw.Gpus.Where(g => g.Vendor == "nvidia" || (g.MemoryTotalGb ?? 0) >= 2).Sum(g => g.Power ?? 0);
-        if (hw.CpuPower is null && gpuW == 0) return (null, "unavailable");
-
-        var dc = (hw.CpuPower ?? 0) + gpuW;
-        return (dc / _cfg.Power.PsuEfficiency + _cfg.Power.BaselineWatts, "estimate");
-    }
-
-    double? Temp(double? c) => c is null ? null : _cfg.IsFahrenheit ? c * 9 / 5 + 32 : c;
+    double? Temp(double? c) => Estimator.ToDisplayTemperature(c, _cfg.IsFahrenheit);
     static double? R(double? v, int digits = 1) => v is null || double.IsNaN(v.Value) ? null : Math.Round(v.Value, digits);
     static string? Trim(string? s, int max) => s is null ? null : s.Length <= max ? s : s[..max];
 
@@ -428,6 +401,7 @@ internal sealed class BridgeWorker : BackgroundService
         }
 
         if (topic == _disc.T.ConfigSet) { ApplyRemoteConfig(payload); return; }
+        if (topic == _disc.T.Notify) { ShowNotification(payload); return; }
 
         if (topic == _disc.T.Command) Execute(payload.ToLowerInvariant());
     }
@@ -463,6 +437,16 @@ internal sealed class BridgeWorker : BackgroundService
             case "monitor_off": SendToAgent(AgentCommands.MonitorOff); break;
             case "close_active_window": SendToAgent(AgentCommands.CloseActiveWindow); break;
         }
+    }
+
+    void ShowNotification(string payload)
+    {
+        if (payload.Length == 0) return; // someone clearing the topic
+        if (!_cfg.Commands.Notifications) { _log.LogWarning("Notification ignored: notifications are disabled in the settings"); return; }
+        var n = Notification.Parse(payload);
+        if (n == null) { _log.LogWarning("Notification ignored: expected text or JSON with \"message\""); return; }
+        if (!_agent.Send(new IpcMessage { Type = "notify", Payload = n.ToJson() }))
+            _log.LogWarning("Notification not shown: nobody is logged in");
     }
 
     void SendToAgent(string cmd)
@@ -515,6 +499,12 @@ internal sealed class BridgeWorker : BackgroundService
     {
         switch (msg.Type)
         {
+            case "notify_event":
+                // The user clicked a notification or one of its buttons → tell Home Assistant.
+                if (_mqtt.IsConnected && !string.IsNullOrEmpty(msg.Payload))
+                    _ = PublishAsync(_disc.T.NotifyEvent, msg.Payload, retain: false, CancellationToken.None)
+                        .ContinueWith(t => _log.LogDebug("notify event not sent: {Msg}", t.Exception?.GetBaseException().Message), TaskContinuationOptions.OnlyOnFaulted);
+                return null;
             case "get_config":
             {
                 var copy = JsonSerializer.Deserialize<BridgeConfig>(JsonSerializer.Serialize(_cfg, ConfigStore.JsonOptions), ConfigStore.JsonOptions)!;

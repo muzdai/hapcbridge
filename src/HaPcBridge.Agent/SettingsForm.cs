@@ -24,7 +24,7 @@ internal sealed class SettingsForm : Form
         new("Питание", [new("PowerSwitch", "Вкл. / выкл. (WoL)"), new("Shutdown", "Выключение"), new("Restart", "Перезагрузка"),
                         new("AbortShutdown", "Отмена выключения"), new("Sleep", "Сон"), new("Hibernate", "Гибернация")]),
         new("Сеанс и окна", [new("Lock", "Блокировка"), new("Logoff", "Выход из системы"), new("MonitorOff", "Выключить монитор"),
-                             new("CloseActiveWindow", "Закрыть активное окно")]),
+                             new("CloseActiveWindow", "Закрыть активное окно"), new("Notifications", "Уведомления из HA")]),
     ];
 
     readonly BridgeConfig _cfg;

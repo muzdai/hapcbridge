@@ -110,6 +110,9 @@ public sealed class CommandToggles
     public bool CloseActiveWindow { get; set; } = true;
     public bool AbortShutdown { get; set; } = true;
 
+    /// <summary>Show notifications sent from Home Assistant.</summary>
+    public bool Notifications { get; set; } = true;
+
     /// <summary>Seconds of warning before shutdown/restart (0 = immediately). Can be aborted.</summary>
     public int ShutdownDelaySeconds { get; set; } = 30;
 }

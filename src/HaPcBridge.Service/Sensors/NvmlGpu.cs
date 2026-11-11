@@ -69,14 +69,3 @@ internal sealed class NvmlGpu : IDisposable
         if (_initialized) { try { Shutdown(); } catch { } _initialized = false; }
     }
 }
-
-public sealed class GpuReading
-{
-    public string Name { get; set; } = "";
-    public string Vendor { get; set; } = "";
-    public double? Load { get; set; }
-    public double? Temperature { get; set; }
-    public double? Power { get; set; }
-    public double? MemoryUsedGb { get; set; }
-    public double? MemoryTotalGb { get; set; }
-}

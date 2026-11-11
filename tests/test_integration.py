@@ -166,3 +166,37 @@ async def test_attributes_not_recorded_and_removal(hass: HomeAssistant, mqtt_moc
     # Removing the PC gives MQTT discovery back to the service and drops the cached snapshot.
     mqtt_mock.async_publish.assert_any_call(f"{ROOT}/config/set", json.dumps({"haDiscovery": True}), 1, False)
     assert "gaming_pc" not in hass.data.get(DOMAIN, {})
+
+
+async def test_notifications(hass: HomeAssistant, mqtt_mock) -> None:
+    await _setup(hass, mqtt_mock)
+    comp = "switch.gaming_pc_computer"
+
+    await hass.services.async_call(DOMAIN, "notify", {
+        "entity_id": comp, "title": "Дверь", "message": "Звонок", "tag": "door",
+        "actions": [{"id": "open", "title": "Открыть"}, "Игнорировать"], "duration": "long",
+    }, blocking=True)
+    topic, payload, qos, retain = mqtt_mock.async_publish.call_args.args
+    assert (topic, qos, retain) == (f"{ROOT}/notify", 1, False)
+    sent = json.loads(payload)
+    assert sent == {"message": "Звонок", "title": "Дверь", "tag": "door", "duration": "long",
+                    "actions": [{"id": "open", "title": "Открыть"}, "Игнорировать"]}
+
+    # Standard notify entity.
+    await hass.services.async_call("notify", "send_message", {"entity_id": _eid(hass, "notification", "notify"), "message": "hi"}, blocking=True)
+    assert json.loads(mqtt_mock.async_publish.call_args.args[1]) == {"message": "hi", "title": ""}
+
+    # The user's answer comes back as an HA event.
+    events = []
+    hass.bus.async_listen("hapcbridge_notification", lambda e: events.append(e.data))
+    async_fire_mqtt_message(hass, f"{ROOT}/notify/event", json.dumps({"tag": "door", "action": "open"}))
+    await hass.async_block_till_done()
+    assert events == [{"device_id": "gaming_pc", "entity_id": comp, "tag": "door", "action": "open"}]
+
+    # Offline PC → a clear error instead of a silently lost message.
+    import pytest
+    from homeassistant.exceptions import HomeAssistantError
+    async_fire_mqtt_message(hass, f"{ROOT}/availability", "offline")
+    await hass.async_block_till_done()
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(DOMAIN, "notify", {"entity_id": comp, "message": "x"}, blocking=True)

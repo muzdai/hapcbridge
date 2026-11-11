@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "hapcbridge"
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 
 CONF_DEVICE_ID = "device_id"
 CONF_BASE_TOPIC = "base_topic"
@@ -13,6 +13,9 @@ DEFAULT_BASE_TOPIC = "hapcbridge"
 CARD_URL = "/hapcbridge_static/hapcbridge-card.js"
 
 SIGNAL_UPDATE = "hapcbridge_update_{}"
+
+# Fired when the user clicks a notification or one of its buttons on the PC.
+EVENT_NOTIFICATION = "hapcbridge_notification"
 
 # Keys in the state JSON → sensor toggle in config.sensors (camelCase, as the service writes it).
 SENSOR_TOGGLE = {

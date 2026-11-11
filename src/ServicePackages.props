@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    The service and the agent are installed into one folder and share one .NET runtime.
+    Both projects reference the same packages, so the SDK picks the same version of every
+    assembly for both (a package's newer System.*.dll vs. the runtime's own copy). The agent
+    never loads the service-only ones; they just must not be overwritten by older copies.
+  -->
+  <ItemGroup>
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+    <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
+    <PackageReference Include="System.IO.Pipes.AccessControl" Version="5.0.0" />
+  </ItemGroup>
+</Project>

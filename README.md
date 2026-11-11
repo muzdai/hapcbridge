@@ -36,6 +36,46 @@
 - После добавления ПК интеграция выключает у службы собственное MQTT Discovery (`haDiscovery: false`), чтобы сущности не дублировались.
 - Действие `hapcbridge.set_config` для автоматизаций, например `{"updateIntervalSeconds": 2}` во время игры.
 
+## Уведомления из Home Assistant
+
+Обычное действие HA — появится `notify.<deviceId>_notification`:
+
+```yaml
+action: notify.send_message
+target:
+  entity_id: notify.gaming_pc_notification
+data:
+  title: Стиральная машина
+  message: Стирка закончилась
+```
+
+С кнопками, меткой и длительностью — действие `hapcbridge.notify` на объект «Компьютер»:
+
+```yaml
+action: hapcbridge.notify
+target:
+  entity_id: switch.gaming_pc_computer
+data:
+  title: Звонок в дверь
+  message: Кто-то у калитки
+  tag: doorbell            # новое уведомление с той же меткой заменяет старое
+  duration: long           # ~25 с вместо ~7 с
+  actions:
+    - { id: open, title: Открыть }
+    - { id: ignore, title: Игнорировать }
+```
+
+Что сделал пользователь, приходит событием `hapcbridge_notification` с полями `device_id`, `tag`, `action` (`open`/`ignore` — id кнопки, `clicked` — клик по самому уведомлению, `dismissed` — закрыл крестиком):
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: hapcbridge_notification
+    event_data: { tag: doorbell, action: open }
+```
+
+На ПК это уведомления Windows (центр уведомлений, «Не беспокоить» учитывается). Кнопки работают, пока запущен агент. Выключатель — «Уведомления из HA» в настройках (вкладка «Датчики и команды»). Без интеграции: JSON или просто текст в топик `hapcbridge/<id>/notify`.
+
 ## Как устроено
 
 ```
@@ -84,15 +124,18 @@
 
 ## Установка
 
-1. Скачай `hapcbridge-win-x64.zip` (собранный локально архив) и распакуй, например, в `C:\Program Files\HaPcBridge`.
-2. Для температур CPU нужен драйвер **PawnIO** (LibreHardwareMonitor ≥ 0.9.5 перешёл на него со старого WinRing0, который Defender блокирует): поставь установщик PawnIO (релизы на GitHub у namazso; его же ставят свежие LibreHardwareMonitor/FanControl/OpenRGB). Без него температура/мощность CPU будут пустыми, остальное работает.
-3. Из админского терминала:
-   ```
-   HaPcBridge.Service.exe install
-   ```
-   Создаётся служба `HaPcBridge` (автозапуск с задержкой, перезапуск при сбое) и `%ProgramData%\HaPcBridge\config.json`.
-4. Правый клик по значку в трее → **Настройки…** (или двойной клик): брокер, логин/пароль, частота, °C/°F, WoL, датчики и команды. Окно работает без прав администратора — изменения сохраняет служба. Если значок скрыт: `HaPcBridge.Agent.exe --settings`.
-5. Удаление: `HaPcBridge.Service.exe uninstall`.
+Запусти `HaPcBridge-Setup-<версия>.exe` (нужны права администратора, Windows 10 1809+ x64).
+
+- **Первая установка:** папка (по умолчанию `C:\Program Files\HA PC Bridge`, должна быть пустой или новой), адрес/порт/логин/пароль MQTT-брокера, затем два необязательных шага:
+  - *Wake-on-LAN* — отключает «Быстрый запуск» Windows и разрешает сетевой карте будить ПК (сеть может моргнуть на пару секунд; WoL в BIOS включается вручную);
+  - *PawnIO* — драйвер для температуры и мощности CPU (LibreHardwareMonitor ≥ 0.9.5 перешёл на него со старого WinRing0, который Defender блокирует). Ставится через `winget`; если не вышло, откроется страница загрузки. Без него эти два датчика пустые, остальное работает.
+- **Уже установлено:** установщик предлагает **Обновить / Восстановить / Удалить**. Обновление полностью автоматическое: служба и агент останавливаются, файлы заменяются, служба запускается; настройки и пароль сохраняются. Более старую версию поверх новой он ставит только после подтверждения.
+- **Удаление** (из «Приложения и возможности» или через установщик): служба удаляется, ПК убирается с брокера, чтобы не висеть в HA; галочка «удалить настройки и журналы» по желанию.
+- **Тихий режим:** `Setup.exe /S [/HOST=брокер /PORT=1883 /USER=имя /PASS=пароль] [/WOL=1] [/PAWNIO=1] [/D=папка]`; обновление — просто `Setup.exe /S` (понижение версии только с `/FORCE`, иначе код возврата 3). Удаление: `uninstall.exe /S [/PURGE]`.
+
+Настройки после установки: правый клик по значку в трее → **Настройки…** (или двойной клик, или ярлык «Настройки HA PC Bridge» в «Пуске»). Окно работает без прав администратора — изменения сохраняет служба.
+
+Установщик не подписан сертификатом, поэтому SmartScreen покажет «Неизвестный издатель» → «Подробнее» → «Выполнить в любом случае».
 
 Отладка: остановить службу и запустить `HaPcBridge.Service.exe` из админской консоли — лог в консоли; агент тогда запусти вручную с ключом `--dev` (без него агент разговаривает только с настоящей службой из Session 0). Логи службы: `%ProgramData%\HaPcBridge\logs`, предупреждения дублируются в журнал событий Windows (источник `HaPcBridge`).
 
@@ -130,18 +173,19 @@
 | `hapcbridge/<id>/power/set` | ← HA | `OFF` → выключение (`ON` обрабатывает HA через WoL) |
 | `hapcbridge/<id>/config` | → HA | текущие настройки без раздела `mqtt` (retained) |
 | `hapcbridge/<id>/config/set` | ← HA | частичный JSON с настройками |
+| `hapcbridge/<id>/notify` | ← HA | уведомление: текст или JSON `{title, message, tag, actions, duration, silent}` |
+| `hapcbridge/<id>/notify/event` | → HA | `{tag, action}` — реакция пользователя |
 
 ## Сборка
 
 ```
-dotnet publish src/HaPcBridge.Service -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish
-dotnet publish src/HaPcBridge.Agent   -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish
+./build.sh        # → dist/HaPcBridge-Setup-<версия>.exe
 ```
 
-Сборка делается локально, GitHub используется только для кода.
+Нужны .NET 8 SDK и NSIS (`apt install nsis`); собирается на Linux. Скрипт гоняет C#-тесты, публикует службу и агент в одну папку с общим .NET-рантаймом (без WPF, который WinForms-приложению не нужен) и собирает установщик. Версия берётся из `Directory.Build.props`. GitHub используется только для кода.
 
-Тесты интеграции: `pip install pytest-homeassistant-custom-component && pytest`.
+Тесты: `dotnet test tests/csharp` (логика конфига, расчёт потребления, разбор уведомлений) и `pip install pytest-homeassistant-custom-component && pytest` (интеграция HA).
 
 ## Дальше по плану
 
-Громкость/медиа, переключение аудиовыхода, уведомления из HA в Windows, запуск приложений по белому списку, яркость/вход монитора (DDC/CI), сущность `update` с самообновлением, окно настроек.
+Громкость/медиа, переключение аудиовыхода, датчики «камера/микрофон заняты», игровой режим, запуск приложений по белому списку, яркость/вход монитора (DDC/CI), сущность `update` с обновлением из HA.

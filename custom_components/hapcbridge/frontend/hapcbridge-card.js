@@ -1,5 +1,5 @@
 /* HA PC Bridge card — status, controls and settings for one PC. No build step. */
-const CARD_VERSION = "0.3.1";
+const CARD_VERSION = "0.4.0";
 
 const I18N = {
   ru: {
@@ -18,7 +18,7 @@ const I18N = {
          loggedUser: "Пользователь", lastLogin: "Вход", lastBoot: "Загрузка", activeWindow: "Окно",
          activeProcess: "Процесс", idleTime: "Простой", locked: "Блокировка" },
     c: { powerSwitch: "Питание", shutdown: "Выкл", restart: "Рестарт", abortShutdown: "Отмена выкл.", sleep: "Сон",
-         hibernate: "Гибернация", lock: "Блок", logoff: "Logoff", monitorOff: "Монитор", closeActiveWindow: "Закрыть окно" },
+         hibernate: "Гибернация", lock: "Блок", logoff: "Logoff", monitorOff: "Монитор", closeActiveWindow: "Закрыть окно", notifications: "Уведомления" },
   },
   en: {
     online: "online", offline: "offline", login: "login", uptime: "uptime",
@@ -36,7 +36,7 @@ const I18N = {
          loggedUser: "User", lastLogin: "Login", lastBoot: "Boot", activeWindow: "Window",
          activeProcess: "Process", idleTime: "Idle", locked: "Locked" },
     c: { powerSwitch: "Power", shutdown: "Off", restart: "Restart", abortShutdown: "Abort", sleep: "Sleep",
-         hibernate: "Hibernate", lock: "Lock", logoff: "Log off", monitorOff: "Monitor", closeActiveWindow: "Close window" },
+         hibernate: "Hibernate", lock: "Lock", logoff: "Log off", monitorOff: "Monitor", closeActiveWindow: "Close window", notifications: "Notifications" },
   },
 };
 

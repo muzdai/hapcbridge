@@ -24,7 +24,7 @@ from .hub import PcHub
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SWITCH, Platform.BUTTON]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SWITCH, Platform.BUTTON, Platform.NOTIFY]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 type PcConfigEntry = ConfigEntry[PcHub]

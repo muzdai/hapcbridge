@@ -21,6 +21,7 @@ from .const import (
     CONF_SEPARATE_ENTITIES,
     DEFAULT_BASE_TOPIC,
     DOMAIN,
+    EVENT_NOTIFICATION,
     SENSOR_TOGGLE,
     SIGNAL_UPDATE,
 )
@@ -62,6 +63,7 @@ class PcHub:
             "state": self._on_state,
             "info": self._on_info,
             "config": self._on_config,
+            "notify/event": self._on_notify_event,
         }
         for leaf, cb in subs.items():
             self._unsubs.append(await mqtt.async_subscribe(self.hass, f"{self.root}/{leaf}", cb, qos=1))
@@ -121,6 +123,22 @@ class PcHub:
             self._layout = layout
             self.on_layout_change()
         self._notify()
+
+    @callback
+    def _on_notify_event(self, msg: mqtt.ReceiveMessage) -> None:
+        """The user reacted to a notification on the PC → HA event for automations."""
+        data = _json(msg.payload)
+        if data is None or msg.retain:
+            return
+        self.hass.bus.async_fire(
+            EVENT_NOTIFICATION,
+            {
+                "device_id": self.device_id,
+                "entity_id": f"switch.{self.device_id}_computer",
+                "tag": data.get("tag") or "",
+                "action": data.get("action") or "clicked",
+            },
+        )
 
     @callback
     def _notify(self) -> None:
@@ -190,6 +208,15 @@ class PcHub:
 
     async def async_power_off(self) -> None:
         await mqtt.async_publish(self.hass, f"{self.root}/power/set", "OFF", qos=1, retain=False)
+
+    @property
+    def notifications_enabled(self) -> bool:
+        return self.command_enabled("notifications")
+
+    async def async_notify(self, message: str, title: str | None = None, **extra: Any) -> None:
+        """Show a notification on the PC. extra: tag, actions, duration, silent."""
+        payload = {"message": message, "title": title or "", **{k: v for k, v in extra.items() if v not in (None, "", [])}}
+        await mqtt.async_publish(self.hass, f"{self.root}/notify", json.dumps(payload, ensure_ascii=False), qos=1, retain=False)
 
     async def async_set_config(self, patch: dict[str, Any]) -> None:
         await mqtt.async_publish(self.hass, f"{self.root}/config/set", json.dumps(patch), qos=1, retain=False)
