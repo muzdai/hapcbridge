@@ -11,7 +11,7 @@ internal static class Installer
         if (!IsAdmin()) { Console.Error.WriteLine("Run as Administrator."); return 1; }
         var exe = Environment.ProcessPath!;
 
-        var binPath = $"binPath= \"\\\"{exe}\\\"\" start= delayed-auto DisplayName= \"HA PC Bridge\"";
+        var binPath = $"binPath= \"\\\"{exe}\\\"\" start= delayed-auto DisplayName= \"HomeAssistant PC Bridge\"";
         if (Sc($"query {name}", quiet: true) == 0)
         {
             // Already registered (update, repair, or an older copy elsewhere): re-point it instead of

@@ -9,6 +9,7 @@ if (!first)
     return;
 }
 
+AgentLog.Write($"Agent {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)} started ({string.Join(" ", args)})");
 Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
 Application.EnableVisualStyles();
 Application.SetCompatibleTextRenderingDefault(false);

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Security.Principal;
 using System.Text;
 using HaPcBridge.Common;
 using Microsoft.Win32;
@@ -24,6 +25,9 @@ internal sealed class AgentContext : ApplicationContext
     TaskCompletionSource<IpcMessage>? _pending;
     string? _pendingType;
     SettingsForm? _settings;
+    bool _openingSettings;
+    bool _configReceived;
+    bool IsConnected { get { lock (_writeLock) return _writer != null; } }
     readonly EventWaitHandle _openSettingsSignal;
     readonly Native.WinEventProc _foregroundProc; // kept in a field so the GC doesn't collect the callback
     readonly IntPtr _foregroundHook;
@@ -58,6 +62,14 @@ internal sealed class AgentContext : ApplicationContext
             Visible = false,
         };
         _tray.DoubleClick += async (_, _) => await OpenSettingsAsync();
+
+        // Whether to show the icon is the service's setting. If the service can't be reached,
+        // show it anyway, so the problem is visible instead of the program seeming to be absent.
+        _ = Task.Delay(6000).ContinueWith(_ => _ui.Post(_ =>
+        {
+            try { if (!_configReceived) { _tray.Visible = true; SetStatus("Нет связи со службой"); } }
+            catch (ObjectDisposedException) { /* the agent already exited */ }
+        }, null));
         _notifier = new Notifier(_tray, _ui, (tag, action) =>
             Write(new IpcMessage { Type = "notify_event", Payload = Notifier.EventJson(tag, action) }));
 
@@ -92,7 +104,13 @@ internal sealed class AgentContext : ApplicationContext
             {
                 using var pipe = new NamedPipeClientStream(".", Ipc.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
                 await pipe.ConnectAsync(5000, ct);
-                if (!IsRealService(pipe)) { await Task.Delay(10000, ct); continue; }
+                if (!IsRealService(pipe, out var why))
+                {
+                    AgentLog.Write("Refused to talk to the pipe server: " + why);
+                    await Task.Delay(10000, ct);
+                    continue;
+                }
+                AgentLog.Write("Connected to the service");
                 var reader = new StreamReader(pipe, new UTF8Encoding(false));
                 var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
 
@@ -114,7 +132,7 @@ internal sealed class AgentContext : ApplicationContext
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
-            catch { /* service not running yet / restarted */ }
+            catch (Exception ex) { AgentLog.Write("No connection to the service: " + ex.Message); }
             finally
             {
                 lock (_writeLock) _writer = null;
@@ -144,11 +162,22 @@ internal sealed class AgentContext : ApplicationContext
     async Task OpenSettingsAsync()
     {
         if (_settings is { IsDisposed: false }) { _settings.Activate(); return; }
+        if (_openingSettings) return;
+        _openingSettings = true;
+        IpcMessage? reply;
+        try
+        {
+            // Right after installation or logon the service may still be starting: give the link a moment.
+            for (var i = 0; i < 50 && !IsConnected; i++) await Task.Delay(300);
+            reply = await RequestAsync(new IpcMessage { Type = "get_config" }, "full_config");
+        }
+        finally { _openingSettings = false; }
 
-        var reply = await RequestAsync(new IpcMessage { Type = "get_config" }, "full_config");
         if (reply?.ConfigJson is not { } json)
         {
-            MessageBox.Show("Служба HA PC Bridge не отвечает. Проверьте, что она запущена (services.msc → HA PC Bridge).",
+            AgentLog.Write("Settings: the service did not answer");
+            MessageBox.Show("Служба «HomeAssistant PC Bridge» не отвечает. Проверьте, что она запущена (services.msc).\n\n" +
+                            "Подробности: " + AgentLog.FilePath,
                 "HA PC Bridge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -173,11 +202,36 @@ internal sealed class AgentContext : ApplicationContext
     /// The real service runs in session 0, where no user program can run. Refuse anything else,
     /// so a program that grabbed our pipe name can't receive the MQTT password from the settings window.
     /// </summary>
-    static bool IsRealService(NamedPipeClientStream pipe)
+    static bool IsRealService(NamedPipeClientStream pipe, out string why)
     {
-        if (!Native.GetNamedPipeServerProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out var pid)) return false;
-        if (!Native.ProcessIdToSessionId(pid, out var serverSession)) return false;
-        if (serverSession == 0) return true;
+        why = "";
+
+        // 1) Who created the pipe? The service runs as LocalSystem, so the pipe belongs to SYSTEM (or
+        //    Administrators); a program started by an ordinary user can only create one owned by that user.
+        //    Reading the owner needs no access to the server process itself.
+        try
+        {
+            var owner = pipe.GetAccessControl().GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            if (owner != null && (owner.IsWellKnown(WellKnownSidType.LocalSystemSid) || owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid)))
+                return true;
+            why = $"pipe owner is {owner?.Value ?? "unknown"}";
+        }
+        catch (Exception ex) { why = "can't read pipe owner: " + ex.Message; }
+
+        // 2) Is the server process in session 0? Taken from the system process list - asking the process
+        //    directly (ProcessIdToSessionId) is denied to a normal user for a LocalSystem service.
+        try
+        {
+            if (Native.GetNamedPipeServerProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out var pid))
+            {
+                using var p = Process.GetProcessById((int)pid);
+                if (p.SessionId == 0) return true;
+                why += $"; server process {pid} is in session {p.SessionId}";
+            }
+            else why += "; server process unknown";
+        }
+        catch (Exception ex) { why += "; can't inspect server process: " + ex.Message; }
+
         // Debugging only: the service started by hand in a console. Has to be asked for explicitly with --dev.
         return Environment.GetCommandLineArgs().Contains("--dev");
     }
@@ -197,6 +251,7 @@ internal sealed class AgentContext : ApplicationContext
         switch (m.Type)
         {
             case "config":
+                _configReceived = true;
                 if (m.TrayIcon is bool show) _tray.Visible = show;
                 if (!string.IsNullOrEmpty(m.StatusText)) SetStatus(m.StatusText);
                 break;
