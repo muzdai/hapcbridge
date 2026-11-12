@@ -10,10 +10,26 @@ const string ServiceName = "HaPcBridge";
 
 switch (args.FirstOrDefault()?.ToLowerInvariant())
 {
-    case "install": return Installer.Install(ServiceName);
-    case "uninstall": return Installer.Uninstall(ServiceName);
-    case "init": return Maintenance.Init(args);
-    case "purge": return await Maintenance.PurgeAsync();
+    case "install" or "uninstall" or "init" or "purge":
+        // Installer steps: whatever goes wrong must end up in setup.log, not vanish with the hidden console.
+        try
+        {
+            var code = args[0].ToLowerInvariant() switch
+            {
+                "install" => Installer.Install(ServiceName),
+                "uninstall" => Installer.Uninstall(ServiceName),
+                "init" => Maintenance.Init(args),
+                _ => await Maintenance.PurgeAsync(),
+            };
+            Maintenance.Log($"{args[0]}: exit code {code}");
+            return code;
+        }
+        catch (Exception ex)
+        {
+            Maintenance.Log($"{args[0]} failed: {ex}");
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
     case "help" or "-h" or "--help" or "/?":
         Console.WriteLine("""
             HA PC Bridge service
@@ -21,6 +37,8 @@ switch (args.FirstOrDefault()?.ToLowerInvariant())
               HaPcBridge.Service.exe uninstall   stop and remove the service (admin)
               HaPcBridge.Service.exe init --host H [--port N] [--user U]
                                                  write broker settings (password: env HAPCBRIDGE_MQTT_PASSWORD)
+              HaPcBridge.Service.exe init --from FILE
+                                                 the same from a file: host, port, user, password on four lines
               HaPcBridge.Service.exe purge       remove this PC's retained topics from the broker
               HaPcBridge.Service.exe             run in this console (debugging)
             """);

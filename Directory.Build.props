@@ -5,13 +5,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Version>0.4.1</Version>
+    <Version>0.4.2</Version>
     <Company>muzdai</Company>
     <Product>HA PC Bridge</Product>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
     <!-- Small, quiet background processes: no ICU data, no background GC thread, no profile-guided re-JIT. -->
-    <InvariantGlobalization>true</InvariantGlobalization>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <TieredPGO>false</TieredPGO>

@@ -111,6 +111,7 @@ UninstPage custom un.OptionsPage un.OptionsLeave
 !insertmacro T MaintNote     "Обновление и восстановление сохраняют настройки. Служба останавливается и запускается автоматически." "Update and repair keep your settings. The service is stopped and started automatically."
 !insertmacro T ConfirmDown   "Установлена более новая версия ($InstalledVersion). Заменить её версией ${VERSION}?" "A newer version ($InstalledVersion) is installed. Replace it with ${VERSION}?"
 !insertmacro T NoUninstaller "Файл удаления не найден. Выберите «Восстановить», затем повторите удаление." "The uninstaller is missing. Choose Repair first, then uninstall again."
+!insertmacro T BrokerFailed  "Не удалось сохранить настройки MQTT-брокера. Укажите их после установки: значок в трее, пункт «Настройки». Подробности: C:\ProgramData\HaPcBridge\logs\setup.log" "Could not save the MQTT broker settings. Enter them after the installation: tray icon, Settings. Details: C:\ProgramData\HaPcBridge\logs\setup.log"
 !insertmacro T DirNotEmpty   "В этой папке уже есть файлы. Выберите пустую или новую папку: при обновлении и удалении папка программы очищается целиком." "This folder already contains files. Choose an empty or a new folder: the program folder is cleared completely on update and uninstall."
 !insertmacro T MqttTitle     "Подключение к MQTT" "MQTT connection"
 !insertmacro T MqttSub       "Брокер Mosquitto, к которому подключён Home Assistant." "The Mosquitto broker Home Assistant uses."
@@ -504,25 +505,28 @@ Section "Install"
   File /r "${PAYLOAD}\*.*"
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
+  ; Broker settings were entered (page) or given (/HOST=...): they win over whatever config exists.
   ${If} $Mode == "install"
-  ${AndIf} $HasConfig != 1
   ${AndIf} $MqttHost != ""
     DetailPrint "$(StBroker)"
-    ; Everything typed by the user goes through the environment, not the command line: the password
-    ; never shows up in a process list, and quotes or spaces in any value can't break the command.
-    ; (Values are passed as registers, not spliced into the call text.)
-    StrCpy $1 $MqttHost
-    System::Call 'kernel32::SetEnvironmentVariable(t "HAPCBRIDGE_MQTT_HOST", t r1)'
-    StrCpy $1 $MqttPort
-    System::Call 'kernel32::SetEnvironmentVariable(t "HAPCBRIDGE_MQTT_PORT", t r1)'
-    StrCpy $1 $MqttUser
-    System::Call 'kernel32::SetEnvironmentVariable(t "HAPCBRIDGE_MQTT_USER", t r1)'
-    StrCpy $1 $MqttPass
-    System::Call 'kernel32::SetEnvironmentVariable(t "HAPCBRIDGE_MQTT_PASSWORD", t r1)'
-    StrCpy $1 ""
-    nsExec::ExecToLog '"$INSTDIR\HaPcBridge.Service.exe" init'
+    ; Handed over in a file inside the installer's private temp folder (deleted by the service right after
+    ; reading, and with the folder on exit): nothing on a command line, no quoting to go wrong.
+    InitPluginsDir
+    FileOpen $9 "$PLUGINSDIR\broker.txt" w
+    FileWriteUTF16LE /BOM $9 "$MqttHost$\r$\n"
+    FileWriteUTF16LE $9 "$MqttPort$\r$\n"
+    FileWriteUTF16LE $9 "$MqttUser$\r$\n"
+    FileWriteUTF16LE $9 "$MqttPass$\r$\n"
+    FileClose $9
+    nsExec::ExecToLog '"$INSTDIR\HaPcBridge.Service.exe" init --from "$PLUGINSDIR\broker.txt"'
     Pop $0
-    System::Call 'kernel32::SetEnvironmentVariable(t "HAPCBRIDGE_MQTT_PASSWORD", t "")'
+    Delete "$PLUGINSDIR\broker.txt"
+    ${If} $0 != 0
+      DetailPrint "$(BrokerFailed)"
+      SetErrorLevel 5
+      IfSilent +2
+        MessageBox MB_ICONEXCLAMATION "$(BrokerFailed)"
+    ${EndIf}
   ${EndIf}
   StrCpy $MqttPass ""
 
