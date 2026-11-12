@@ -83,6 +83,9 @@ internal sealed class BridgeWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         _log.LogInformation("HA PC Bridge {Version} starting, device '{Id}', config {Path}", Discovery.Version, _cfg.DeviceId, ConfigStore.ConfigPath);
+        _log.LogInformation("Broker {Host}:{Port}, user {User}, password {Pw}", _cfg.Mqtt.Host, _cfg.Mqtt.Port,
+            _cfg.Mqtt.Username.Length > 0 ? _cfg.Mqtt.Username : "(none)",
+            ConfigStore.GetPassword(_cfg.Mqtt).Length > 0 ? "set" : "(none)");
         _hw = new HardwareMonitor(_log);
         WatchConfig();
         _ = Task.Run(() => _agent.RunAsync(ct), ct);

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.AccessControl;
 using System.Security.Principal;
 using HaPcBridge.Common;
 
@@ -34,7 +35,7 @@ internal static class Installer
 
         ConfigStore.Load(out _); // creates config.json with defaults if missing
         // The folder holds the (DPAPI-encrypted) MQTT password: SYSTEM and Administrators only.
-        Run("icacls.exe", $"\"{ConfigStore.Directory}\" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /Q");
+        SecureConfigFolder();
         Console.WriteLine($"Config: {ConfigStore.ConfigPath}");
         Console.WriteLine("Edit the MQTT host/user/password there; the service picks changes up automatically.");
 
@@ -48,6 +49,54 @@ internal static class Installer
         WaitStopped(name);
         foreach (var p in Process.GetProcessesByName("HaPcBridge.Agent")) { try { p.Kill(); } catch { } }
         return Sc($"delete {name}");
+    }
+
+    /// <summary>
+    /// Folder: SYSTEM and Administrators only, inherited by everything inside. Files and subfolders are
+    /// reset to plain inheritance, so nothing in there can end up with a list the service can't read.
+    /// (This replaced an icacls call that left an already existing config.json unreadable for the service,
+    /// which then silently ran on default settings.)
+    /// </summary>
+    static void SecureConfigFolder()
+    {
+        try
+        {
+            var dir = new DirectoryInfo(ConfigStore.Directory);
+            dir.Create();
+
+            var folder = new DirectorySecurity();
+            folder.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            const InheritanceFlags inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+            foreach (var sid in new[] { WellKnownSidType.LocalSystemSid, WellKnownSidType.BuiltinAdministratorsSid })
+                folder.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid, null), FileSystemRights.FullControl,
+                    inherit, PropagationFlags.None, AccessControlType.Allow));
+            dir.SetAccessControl(folder);
+
+            foreach (var entry in dir.EnumerateFileSystemInfos("*", SearchOption.AllDirectories))
+            {
+                if (entry is DirectoryInfo d)
+                {
+                    var sec = new DirectorySecurity();
+                    sec.SetAccessRuleProtection(isProtected: false, preserveInheritance: false);
+                    d.SetAccessControl(sec);
+                }
+                else if (entry is FileInfo f)
+                {
+                    var sec = new FileSecurity();
+                    sec.SetAccessRuleProtection(isProtected: false, preserveInheritance: false);
+                    f.SetAccessControl(sec);
+                }
+            }
+
+            var config = new FileInfo(ConfigStore.ConfigPath);
+            Maintenance.Log("permissions: folder " + dir.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Access)
+                            + ", config.json " + (config.Exists ? config.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Access) : "missing"));
+        }
+        catch (Exception ex)
+        {
+            Maintenance.Log("permissions: FAILED " + ex.Message);
+            Console.Error.WriteLine("Could not restrict the settings folder: " + ex.Message);
+        }
     }
 
     /// <summary>Waits up to 20 s for the service process to exit, so its files can be replaced.</summary>
